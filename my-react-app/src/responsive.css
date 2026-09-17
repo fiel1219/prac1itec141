@@ -1,0 +1,9 @@
+@media (max-width: 900px) {
+  .login-screen { padding: 18px; align-items: start; }
+  .login-layout { display: block; width: 100%; max-width: 430px; margin: auto; }
+  .login-intro { padding: 12px 4px 24px; }
+  .login-intro h1 { font-size: 30px; margin: 10px 0 4px; }
+  .login-intro p { margin-bottom: 15px; }
+  .intro-line { display: inline-block; margin: 5px 12px 0 0; font-size: 11px; }
+  .login-card { width: 100%; padding: 24px; }
+}
