@@ -1,4 +1,5 @@
 html, body, #root { max-width: 100%; overflow-x: hidden; }
+.login-success{background:#e5f8ee;color:#238b59;padding:10px;border-radius:7px;font-size:12px;margin-top:15px}.switch-auth{display:block;width:100%;border:0;background:none;color:#6856e8;font-size:12px;margin-top:15px}
 main { min-width: 0; width: 100%; }
 table { max-width: 100%; }
 
