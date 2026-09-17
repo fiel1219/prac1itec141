@@ -25,3 +25,8 @@ export async function fetchAdmins() {
   if (!supabase) return { data: null, error: new Error('Supabase is not configured') }
   return supabase.from('admin_accounts').select('*').order('full_name')
 }
+
+export async function fetchApprovals() {
+  if (!supabase) return { data: null, error: new Error('Supabase is not configured') }
+  return supabase.from('account_approvals').select('*').order('created_at', { ascending: false })
+}
