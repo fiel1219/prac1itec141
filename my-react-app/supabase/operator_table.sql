@@ -32,6 +32,7 @@ grant select on public.operator_accounts to anon, authenticated;
 grant select on public.account_approvals to anon, authenticated;
 grant insert on public.account_approvals to anon, authenticated;
 grant insert on public.operator_accounts, public.admin_accounts to authenticated;
+grant delete on public.operator_accounts, public.admin_accounts to authenticated;
 grant update on public.account_approvals to authenticated;
 
 drop policy if exists "prototype read operators" on public.operator_accounts;
@@ -42,3 +43,7 @@ drop policy if exists "prototype submit approval" on public.account_approvals;
 create policy "prototype submit approval" on public.account_approvals for insert to anon, authenticated with check (status = 'pending');
 drop policy if exists "prototype approve account" on public.account_approvals;
 create policy "prototype approve account" on public.account_approvals for update to authenticated using (true) with check (status in ('pending', 'approved', 'rejected'));
+drop policy if exists "prototype manage admins" on public.admin_accounts;
+create policy "prototype manage admins" on public.admin_accounts for delete to authenticated using (true);
+drop policy if exists "prototype manage operators" on public.operator_accounts;
+create policy "prototype manage operators" on public.operator_accounts for delete to authenticated using (true);
