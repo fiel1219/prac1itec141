@@ -31,6 +31,8 @@ grant usage on schema public to anon, authenticated;
 grant select on public.operator_accounts to anon, authenticated;
 grant select on public.account_approvals to anon, authenticated;
 grant insert on public.account_approvals to anon, authenticated;
+grant insert on public.operator_accounts, public.admin_accounts to authenticated;
+grant update on public.account_approvals to authenticated;
 
 drop policy if exists "prototype read operators" on public.operator_accounts;
 create policy "prototype read operators" on public.operator_accounts for select to anon, authenticated using (true);
@@ -38,3 +40,5 @@ drop policy if exists "prototype read approvals" on public.account_approvals;
 create policy "prototype read approvals" on public.account_approvals for select to anon, authenticated using (true);
 drop policy if exists "prototype submit approval" on public.account_approvals;
 create policy "prototype submit approval" on public.account_approvals for insert to anon, authenticated with check (status = 'pending');
+drop policy if exists "prototype approve account" on public.account_approvals;
+create policy "prototype approve account" on public.account_approvals for update to authenticated using (true) with check (status in ('pending', 'approved', 'rejected'));
