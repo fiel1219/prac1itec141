@@ -10,3 +10,13 @@ export async function fetchShelves() {
   if (!supabase) return { data: null, error: new Error('Supabase is not configured') }
   return supabase.from('shelves').select('*, inventory_units(*)').eq('status', 'active').order('code')
 }
+
+export async function fetchBorrowers() {
+  if (!supabase) return { data: null, error: new Error('Supabase is not configured') }
+  return supabase.from('borrowers').select('*').order('name')
+}
+
+export async function fetchTransactions() {
+  if (!supabase) return { data: null, error: new Error('Supabase is not configured') }
+  return supabase.from('transactions').select('*, borrowers(name, identity_number), inventory_units(unit_number, shelf_id, shelves(code, name, item_type))').order('borrowed_at', { ascending: false })
+}

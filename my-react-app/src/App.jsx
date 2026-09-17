@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import './App.css'
-import { fetchShelves, isSupabaseConfigured } from './lib/supabase'
+import { fetchShelves, fetchBorrowers, fetchTransactions, isSupabaseConfigured } from './lib/supabase'
 
 const nav = ['Dashboard','Inventory','Shelves','Borrowers','Transactions','Inventory Checks','Reports']
 const admin = ['Operators','Admins','Permissions','Activity Logs','Settings']
@@ -24,6 +24,13 @@ export default function App() {
     {error && <div className="connection-error"><b>Database connection error:</b> {error}</div>}
     {page==='Dashboard' && <section className="stats">{[['Total units',units.length,'From Supabase','▤'],['Available',count('available'),'Live inventory count','✓'],['Borrowed',count('borrowed'),'Live inventory count','↗'],['Needs attention',units.filter(u=>u.status==='under_maintenance'||u.condition==='damaged').length,'Damaged or maintenance','!']].map((x,i)=><div className="stat" key={x[0]}><i className={'c'+i}>{x[3]}</i><small>{x[0]}</small><strong>{loading?'…':x[1]}</strong><em>{x[2]}</em></div>)}</section>}
     {(page==='Dashboard'||page==='Shelves'||page==='Inventory') && <section className="card page"><div className="cardhead"><div><h2>{page==='Dashboard'?'Shelves from Supabase':page}</h2><p>{loading?'Loading database records…':shelves.length+' shelf records loaded from Supabase'}</p></div><Badge tone={error?'bad':''}>{loading?'Loading':error?'Error':'Connected'}</Badge></div>{page!=='Dashboard'&&<div className="search">⌕ <input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Search shelves..."/></div>}{!loading&&!error&&!shelves.length&&<div className="empty">No shelves found. Run seed.sql in Supabase, then refresh.</div>}<div className="shelves">{shelves.map(s=><article className="shelf" key={s.id}><div><i>▥</i><Badge>{(s.inventory_units||[]).filter(u=>u.status==='available').length} available</Badge></div><h2>{s.name}</h2><p>{s.code} · {s.item_type}</p><hr/><small><b>{(s.inventory_units||[]).length}</b> total units <span>{(s.inventory_units||[]).filter(u=>u.status==='borrowed').length} borrowed</span></small></article>)}</div></section>}
-    {page!=='Dashboard'&&page!=='Shelves'&&page!=='Inventory'&&<section className="card page"><h2>{page}</h2><p className="empty">No records loaded for this tab. Hardcoded data has been removed.</p></section>}
+    {page!=='Dashboard'&&page!=='Shelves'&&page!=='Inventory'&&<DatabaseTable page={page}/>} 
     </main></div>
+}
+
+function DatabaseTable({ page }) {
+  const [rows, setRows] = useState([]), [loading, setLoading] = useState(true), [error, setError] = useState('')
+  useEffect(() => { const load = page === 'Borrowers' ? fetchBorrowers() : page === 'Transactions' ? fetchTransactions() : Promise.resolve({ data: [] }); load.then(({ data, error }) => { if (error) setError(error.message); else setRows(data || []); setLoading(false) }) }, [page])
+  const isBorrowers = page === 'Borrowers'
+  return <section className="card page"><div className="cardhead"><div><h2>{page}</h2><p>Live records loaded from Supabase</p></div><Badge tone={error ? 'bad' : ''}>{loading ? 'Loading' : error ? 'Error' : rows.length + ' records'}</Badge></div>{error && <div className="connection-error">{error}</div>}{!loading && !error && rows.length === 0 && <div className="empty">No records found in the {page.toLowerCase()} table.</div>}{rows.length > 0 && <table><thead><tr>{(isBorrowers ? ['Name','Student / Employee ID','Created'] : ['Reference','Borrower','Item','Borrowed','Expected return','Returned']).map(h => <th key={h}>{h}</th>)}</tr></thead><tbody>{rows.map(r => isBorrowers ? <tr key={r.id}><td><b>{r.name}</b></td><td>{r.identity_number}</td><td>{new Date(r.created_at).toLocaleDateString()}</td></tr> : <tr key={r.id}><td><b>{r.reference}</b></td><td>{r.borrowers?.name || '—'}</td><td>{r.inventory_units?.shelves?.code || '—'} #{String(r.inventory_units?.unit_number || '').padStart(3,'0')}</td><td>{new Date(r.borrowed_at).toLocaleDateString()}</td><td>{r.expected_return_at}</td><td><Badge tone={r.returned_at ? 'neutral' : ''}>{r.returned_at ? 'Returned' : 'Borrowed'}</Badge></td></tr>)}</tbody></table>}</section>
 }
