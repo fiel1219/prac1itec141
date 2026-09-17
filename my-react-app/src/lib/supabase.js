@@ -28,13 +28,7 @@ export async function fetchAdmins() {
 
 export async function fetchUsers() {
   if (!supabase) return { data: null, error: new Error('Supabase is not configured') }
-  const [admins, operators] = await Promise.all([
-    supabase.from('admin_accounts').select('*'),
-    supabase.from('operator_accounts').select('*')
-  ])
-  if (admins.error) return admins
-  if (operators.error) return operators
-  return { data: [...admins.data.map(x => ({ ...x, role: 'Admin' })), ...operators.data.map(x => ({ ...x, role: 'Operator' }))].sort((a,b) => a.full_name.localeCompare(b.full_name)), error: null }
+  return supabase.from('user_accounts').select('*').order('full_name')
 }
 
 export async function fetchApprovals() {
