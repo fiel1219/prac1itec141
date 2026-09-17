@@ -4,6 +4,7 @@ create extension if not exists pgcrypto;
 create type public.unit_status as enum ('available','borrowed','missing','under_maintenance','not_found');
 create type public.unit_condition as enum ('good','damaged');
 create type public.shelf_status as enum ('active','archived');
+create type public.account_status as enum ('active','disabled');
 
 create table public.shelves (
   id uuid primary key default gen_random_uuid(),
@@ -71,6 +72,14 @@ create table public.activity_logs (
   created_at timestamptz not null default now()
 );
 
+create table public.admin_accounts (
+  id uuid primary key default gen_random_uuid(),
+  full_name text not null,
+  email text not null unique,
+  status public.account_status not null default 'active',
+  created_at timestamptz not null default now()
+);
+
 create index inventory_units_shelf_id_idx on public.inventory_units(shelf_id);
 create index transactions_borrower_id_idx on public.transactions(borrower_id);
 create index transactions_unit_id_idx on public.transactions(unit_id);
@@ -82,6 +91,7 @@ alter table public.borrowers enable row level security;
 alter table public.transactions enable row level security;
 alter table public.inventory_checks enable row level security;
 alter table public.activity_logs enable row level security;
+alter table public.admin_accounts enable row level security;
 
 -- Prototype policies. Replace these with authenticated role policies before production.
 create policy "prototype read shelves" on public.shelves for select using (true);
@@ -90,3 +100,4 @@ create policy "prototype read borrowers" on public.borrowers for select using (t
 create policy "prototype read transactions" on public.transactions for select using (true);
 create policy "prototype read checks" on public.inventory_checks for select using (true);
 create policy "prototype read logs" on public.activity_logs for select using (true);
+create policy "prototype read admins" on public.admin_accounts for select using (true);

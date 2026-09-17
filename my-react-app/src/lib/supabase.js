@@ -20,3 +20,8 @@ export async function fetchTransactions() {
   if (!supabase) return { data: null, error: new Error('Supabase is not configured') }
   return supabase.from('transactions').select('*, borrowers(name, identity_number), inventory_units(unit_number, shelf_id, shelves(code, name, item_type))').order('borrowed_at', { ascending: false })
 }
+
+export async function fetchAdmins() {
+  if (!supabase) return { data: null, error: new Error('Supabase is not configured') }
+  return supabase.from('admin_accounts').select('*').order('full_name')
+}
