@@ -1,3 +1,7 @@
+html, body, #root { max-width: 100%; overflow-x: hidden; }
+main { min-width: 0; width: 100%; }
+table { max-width: 100%; }
+
 @media (max-width: 900px) {
   .login-screen { padding: 18px; align-items: start; }
   .login-layout { display: block; width: 100%; max-width: 430px; margin: auto; }
@@ -6,4 +10,15 @@
   .login-intro p { margin-bottom: 15px; }
   .intro-line { display: inline-block; margin: 5px 12px 0 0; font-size: 11px; }
   .login-card { width: 100%; padding: 24px; }
+  .login-intro, .login-card { min-width: 0; }
+}
+
+@media (max-width: 700px) {
+  main { padding-left: 16px; padding-right: 16px; }
+  header { min-width: 0; }
+  .card { max-width: 100%; overflow: hidden; }
+  table { width: 100%; table-layout: fixed; white-space: normal; word-break: break-word; }
+  th, td { padding: 10px 5px; font-size: 10px; }
+  .columns { overflow: visible; }
+  .quick, .actions { max-width: 100%; }
 }
