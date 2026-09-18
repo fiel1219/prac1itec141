@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import './App.css'
 import { fetchShelves, fetchBorrowers, fetchTransactions, fetchAdmins, fetchUsers, fetchApprovals, isSupabaseConfigured, supabase } from './lib/supabase'
 
-const nav = ['Dashboard','Inventory','Shelves','Borrowers','Transactions','Inventory Checks','Reports']
+const nav = ['Dashboard','Scan QR','Inventory','Shelves','Borrowers','Transactions','Inventory Checks','Reports']
 const admin = ['Users','Admin Approvals','Permissions','Activity Logs','Settings']
 const Badge = ({children,tone=''}) => <span className={'badge '+tone}>{children}</span>
 
@@ -23,9 +23,39 @@ export default function App() {
     <main><header><button className="mobile" onClick={()=>setMobile(!mobile)}>☰</button><div><label>SUPABASE DATABASE</label><h1>{page}</h1><p>{isSupabaseConfigured?'Live data connection':'Environment variables are missing'}</p></div><div className="head"><span>{isSupabaseConfigured?'Connected':'Not connected'}</span><button className="logout" onClick={()=>supabase?.auth.signOut()}>Log out</button></div></header>
     {error && <div className="connection-error"><b>Database connection error:</b> {error}</div>}
     {page==='Dashboard' && <section className="stats">{[['Total units',units.length,'From Supabase','▤'],['Available',count('available'),'Live inventory count','✓'],['Borrowed',count('borrowed'),'Live inventory count','↗'],['Needs attention',units.filter(u=>u.status==='under_maintenance'||u.condition==='damaged').length,'Damaged or maintenance','!']].map((x,i)=><div className="stat" key={x[0]}><i className={'c'+i}>{x[3]}</i><small>{x[0]}</small><strong>{loading?'…':x[1]}</strong><em>{x[2]}</em></div>)}</section>}
+    {page==='Scan QR' && <Scanner />}
     {(page==='Dashboard'||page==='Shelves'||page==='Inventory') && <section className="card page"><div className="cardhead"><div><h2>{page==='Dashboard'?'Shelves from Supabase':page}</h2><p>{loading?'Loading database records…':shelves.length+' shelf records loaded from Supabase'}</p></div><Badge tone={error?'bad':''}>{loading?'Loading':error?'Error':'Connected'}</Badge></div>{page!=='Dashboard'&&<div className="search">⌕ <input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Search shelves..."/></div>}{!loading&&!error&&!shelves.length&&<div className="empty">No shelves found. Run seed.sql in Supabase, then refresh.</div>}<div className="shelves">{shelves.map(s=><article className="shelf" key={s.id}><div><i>▥</i><Badge>{(s.inventory_units||[]).filter(u=>u.status==='available').length} available</Badge></div><h2>{s.name}</h2><p>{s.code} · {s.item_type}</p><hr/><small><b>{(s.inventory_units||[]).length}</b> total units <span>{(s.inventory_units||[]).filter(u=>u.status==='borrowed').length} borrowed</span></small></article>)}</div></section>}
     {page!=='Dashboard'&&page!=='Shelves'&&page!=='Inventory'&&<DatabaseTable page={page}/>} 
     </main></div>
+}
+
+function Scanner() {
+  const [value, setValue] = useState(''), [result, setResult] = useState(null), [error, setError] = useState(''), [scanning, setScanning] = useState(false)
+  const video = useRef(null), stream = useRef(null)
+  useEffect(() => () => stream.current?.getTracks().forEach(track => track.stop()), [])
+  async function startCamera() {
+    setError(''); setResult(null)
+    if (!('BarcodeDetector' in window)) { setError('QR scanning is not supported by this browser. Enter the code manually.'); return }
+    try {
+      stream.current = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+      video.current.srcObject = stream.current; await video.current.play(); setScanning(true); detect()
+    } catch (e) { setError(e.message || 'Camera permission was denied.') }
+  }
+  async function detect() {
+    if (!video.current || !scanning) return
+    const detector = new BarcodeDetector({ formats: ['qr_code'] })
+    const codes = await detector.detect(video.current).catch(() => [])
+    if (codes[0]?.rawValue) { setValue(codes[0].rawValue); stopCamera(); lookup(codes[0].rawValue) }
+    else requestAnimationFrame(detect)
+  }
+  function stopCamera() { stream.current?.getTracks().forEach(track => track.stop()); stream.current = null; setScanning(false) }
+  async function lookup(code = value) {
+    if (!code.trim()) return
+    setError(''); setResult(null)
+    const { data, error: queryError } = await supabase.from('shelves').select('*, inventory_units(*)').eq('qr_value', code.trim()).maybeSingle()
+    if (queryError) setError(queryError.message); else if (!data) setError('No shelf found for this QR code.'); else setResult(data)
+  }
+  return <section className="card page scanner-page"><div className="cardhead"><div><h2>Scan inventory QR</h2><p>Scan a shelf label to view its live stock.</p></div><Badge>Operator</Badge></div><div className="scanner-grid"><div className="scanner-camera"><video ref={video} muted playsInline /><div className={scanning ? 'scan-line active' : 'scan-line'}></div>{!scanning && <div className="camera-placeholder">▣<span>Camera preview</span></div>}</div><div className="scanner-controls"><button className="primary" onClick={scanning ? stopCamera : startCamera}>{scanning ? 'Stop camera' : 'Open camera'}</button><div className="or">or enter the QR value</div><div className="scan-input"><input value={value} onChange={e => setValue(e.target.value)} onKeyDown={e => e.key === 'Enter' && lookup()} placeholder="e.g. SHELF-A-01"/><button onClick={() => lookup()}>Search</button></div><small>Allow camera access when prompted. Manual entry works on every device.</small>{error && <div className="connection-error">{error}</div>}</div></div>{result && <div className="scan-result"><div className="result-title"><div><span className="eyebrow">SHELF FOUND</span><h2>{result.name}</h2><p>{result.code} · {result.item_type}</p></div><Badge>{result.inventory_units.length} units</Badge></div><div className="unit-list">{result.inventory_units.map(unit => <div className="unit-row" key={unit.id}><b>Unit {String(unit.unit_number).padStart(3, '0')}</b><Badge tone={unit.status==='available'?'':'neutral'}>{unit.status.replace('_',' ')}</Badge><span>{unit.condition}</span></div>)}</div></div>}</section>
 }
 
 function DatabaseTable({ page }) {
