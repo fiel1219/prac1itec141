@@ -45,11 +45,11 @@ function Scanner() {
     } catch (e) { setError(e.message || 'Camera permission was denied.') }
   }
   async function detect() {
-    if (!video.current || !scanning) return
+    if (!video.current || !stream.current) return
     const detector = new BarcodeDetector({ formats: ['qr_code'] })
     const codes = await detector.detect(video.current).catch(() => [])
     if (codes[0]?.rawValue) { setValue(codes[0].rawValue); stopCamera(); lookup(codes[0].rawValue) }
-    else requestAnimationFrame(detect)
+    else if (stream.current) requestAnimationFrame(detect)
   }
   function stopCamera() { stream.current?.getTracks().forEach(track => track.stop()); stream.current = null; setScanning(false) }
   async function lookup(code = value) {
