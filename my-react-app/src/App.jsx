@@ -3,7 +3,7 @@ import './App.css'
 import { fetchShelves, fetchBorrowers, fetchTransactions, fetchAdmins, fetchUsers, fetchApprovals, isSupabaseConfigured, supabase } from './lib/supabase'
 import QRCode from 'qrcode'
 
-const nav = ['Dashboard','Scan QR','Inventory','Shelves','Borrowers','Transactions','Inventory Checks','Reports']
+const nav = ['Dashboard','Scan QR','Shelves','Borrowers','Transactions','Inventory Checks','Reports']
 const admin = ['Users','Admin Approvals','Permissions','Activity Logs','Settings']
 const Badge = ({children,tone=''}) => <span className={'badge '+tone}>{children}</span>
 
@@ -15,6 +15,7 @@ export default function App() {
   const [loading,setLoading] = useState(true)
   const [error,setError] = useState('')
   const [currentUser,setCurrentUser] = useState(null)
+  const [userMenu,setUserMenu] = useState(false)
   const [selectedShelf,setSelectedShelf] = useState(null)
   useEffect(() => { fetchShelves().then(({data,error}) => { if(error) setError(error.message); else setDbShelves(data || []); setLoading(false) }) }, [])
   useEffect(() => { supabase?.auth.getUser().then(async ({ data }) => { if (!data.user) return; const { data: account } = await supabase.from('user_accounts').select('full_name,email,role').eq('email', data.user.email).maybeSingle(); setCurrentUser(account || { full_name: data.user.user_metadata?.full_name || 'User', email: data.user.email, role: 'Operator' }) }) }, [])
@@ -22,8 +23,8 @@ export default function App() {
   const units = dbShelves.flatMap(s => s.inventory_units || [])
   const count = status => units.filter(u => u.status === status).length
   const go = name => { setPage(name); setMobile(false) }
-  return <div className="app">
-    <aside className={mobile ? 'side open' : 'side'}><div className="brand"><b>⌁</b><span><strong>Stockly</strong><small>Inventory system</small></span></div><div className="sidebar-user"><div className="user-avatar">{(currentUser?.full_name || 'U').charAt(0).toUpperCase()}</div><div><b>{currentUser?.full_name || 'Loading user...'}</b><small>{currentUser?.email || ''}</small><span>{currentUser?.role || 'Operator'}</span></div><button className="logout" onClick={()=>supabase?.auth.signOut()}>Log out</button></div><div className="workspace">● Science Laboratory　⌄</div><label>MAIN MENU</label><nav>{nav.map((n,i)=><button className={page===n?'active':''} onClick={()=>go(n)} key={n}>{['⌂','▤','▥','♙','↔','✓','▥'][i]} {n}</button>)}</nav>{currentUser?.role === 'Admin' && <><label>ADMINISTRATION</label><nav>{admin.map(n=><button className={page===n?'active':''} onClick={()=>go(n)} key={n}>⚙ {n}</button>)}</nav></>}</aside>
+  return <div className="app"><MainBrand currentUser={currentUser} />
+    <aside className={mobile ? 'side open' : 'side'}><div className="brand"><b>⌁</b><span><strong>Stockly</strong><small>Inventory system</small></span></div><div className="sidebar-user"><div className="user-avatar">{(currentUser?.full_name || 'U').charAt(0).toUpperCase()}</div><div><b>{currentUser?.full_name || 'Loading user...'}</b><small>{currentUser?.email || ''}</small><span>{currentUser?.role || 'Operator'}</span></div><button className="user-menu-toggle" onClick={()=>setUserMenu(!userMenu)} aria-label="Open user menu">⌄</button>{userMenu&&<button className="logout user-menu-logout" onClick={()=>supabase?.auth.signOut()}>Log out</button>}</div><div className="workspace">● Science Laboratory　⌄</div><label>MAIN MENU</label><nav>{nav.map((n,i)=><button className={page===n?'active':''} onClick={()=>go(n)} key={n}>{['⌂','▤','▥','♙','↔','✓','▥'][i]} {n}</button>)}</nav>{currentUser?.role === 'Admin' && <><label>ADMINISTRATION</label><nav>{admin.map(n=><button className={page===n?'active':''} onClick={()=>go(n)} key={n}>⚙ {n}</button>)}</nav></>}</aside>
     <main><header><button className="mobile" onClick={()=>setMobile(!mobile)}>☰</button><div><label>SUPABASE DATABASE</label><h1>{page}</h1><p>{isSupabaseConfigured?'Live data connection':'Environment variables are missing'}</p></div><div className="head"><span>{isSupabaseConfigured?'Connected':'Not connected'}</span><button className="logout" onClick={()=>supabase?.auth.signOut()}>Log out</button></div></header>
     {error && <div className="connection-error"><b>Database connection error:</b> {error}</div>}
     {page==='Dashboard' && <section className="stats">{[['Total units',units.length,'From Supabase','▤'],['Available',count('available'),'Live inventory count','✓'],['Borrowed',count('borrowed'),'Live inventory count','↗'],['Needs attention',units.filter(u=>u.status==='under_maintenance'||u.condition==='damaged').length,'Damaged or maintenance','!']].map((x,i)=><div className="stat" key={x[0]}><i className={'c'+i}>{x[3]}</i><small>{x[0]}</small><strong>{loading?'…':x[1]}</strong><em>{x[2]}</em></div>)}</section>}
@@ -32,6 +33,10 @@ export default function App() {
     {selectedShelf && <ShelfQR shelf={selectedShelf} close={()=>setSelectedShelf(null)} />}
     {page!=='Dashboard'&&page!=='Shelves'&&page!=='Inventory'&&<DatabaseTable page={page}/>} 
     </main></div>
+}
+
+function MainBrand() {
+  return <div className="main-brand-user"><div className="brand"><b>⌁</b><span><strong>Stockly</strong><small>Inventory system</small></span></div></div>
 }
 
 function Scanner() {
