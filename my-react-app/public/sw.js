@@ -1,4 +1,4 @@
-const CACHE_NAME = 'stockly-shell-v1'
+const CACHE_NAME = 'inventoscan-shell-v2'
 const APP_SHELL = ['/', '/index.html', '/favicon.svg']
 
 self.addEventListener('install', event => {

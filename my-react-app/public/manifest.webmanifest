@@ -1,6 +1,6 @@
 {
-  "name": "Stockly Inventory System",
-  "short_name": "Stockly",
+  "name": "VSU InventoScan Inventory System",
+  "short_name": "InventoScan",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#f6f7fb",

@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import './App.css'
-import { fetchShelves, fetchBorrowers, fetchTransactions, fetchAdmins, fetchUsers, fetchApprovals, isSupabaseConfigured, supabase } from './lib/supabase'
+import { fetchShelves, fetchShelfByQR, fetchBorrowers, fetchTransactions, fetchUsers, fetchApprovals, isSupabaseConfigured, supabase } from './lib/supabase'
 import QRCode from 'qrcode'
+import { ItemManagement, StockMovements, Reports, LowStockAlerts } from './InventoryFeatures'
+import { activeUnits, availableUnits as getAvailableUnits } from './lib/inventory'
 
-const nav = ['Dashboard','Scan QR','Shelves','Borrowers','Returns','Transaction History','Inventory Checks','Reports']
+const nav = ['Dashboard','Scan QR','Shelves','Items','Stock Movements','Borrowers','Returns','Transaction History','Inventory Checks','Reports']
 const admin = ['Users','Admin Approvals','Permissions','Activity Logs','Settings']
 const Badge = ({children,tone=''}) => <span className={'badge '+tone}>{children}</span>
 
@@ -17,32 +19,49 @@ export default function App() {
   const [currentUser,setCurrentUser] = useState(null)
   const [userMenu,setUserMenu] = useState(false)
   const [selectedShelf,setSelectedShelf] = useState(null)
-  useEffect(() => { fetchShelves().then(({data,error}) => { if(error) setError(error.message); else setDbShelves(data || []); setLoading(false) }) }, [])
+  async function refreshInventory() {
+    const { data, error: failure } = await fetchShelves()
+    if (failure) setError(failure.message)
+    else { setDbShelves(data || []); setError('') }
+    setLoading(false)
+  }
+  useEffect(() => {
+    Promise.resolve().then(refreshInventory)
+    const timer = setInterval(refreshInventory, 30000)
+    const refresh = () => { if (document.visibilityState === 'visible') refreshInventory() }
+    document.addEventListener('visibilitychange', refresh)
+    return () => { clearInterval(timer); document.removeEventListener('visibilitychange', refresh) }
+  }, [])
   useEffect(() => { supabase?.auth.getUser().then(async ({ data }) => { if (!data.user) return; const { data: account } = await supabase.from('user_accounts').select('full_name,email,role').eq('email', data.user.email).maybeSingle(); setCurrentUser(account || { full_name: data.user.user_metadata?.full_name || 'User', email: data.user.email, role: 'Operator' }) }) }, [])
   const shelves = useMemo(() => dbShelves.filter(s => (s.code+' '+s.name+' '+s.item_type).toLowerCase().includes(query.toLowerCase())), [dbShelves,query])
-  const units = dbShelves.flatMap(s => s.inventory_units || [])
+  const units = dbShelves.flatMap(activeUnits)
   const count = status => units.filter(u => u.status === status).length
   const go = name => { setPage(name); setMobile(false) }
   return <div className="app"><MainBrand currentUser={currentUser} />
-    <aside className={mobile ? 'side open' : 'side'}><div className="brand"><b>⌁</b><span><strong>Stockly</strong><small>Inventory system</small></span></div><div className="sidebar-user"><div className="user-avatar">{(currentUser?.full_name || 'U').charAt(0).toUpperCase()}</div><div><b>{currentUser?.full_name || 'Loading user...'}</b><small>{currentUser?.email || ''}</small><span>{currentUser?.role || 'Operator'}</span></div><button className="user-menu-toggle" onClick={()=>setUserMenu(!userMenu)} aria-label="Open user menu">⌄</button>{userMenu&&<button className="logout user-menu-logout" onClick={()=>supabase?.auth.signOut()}>Log out</button>}</div><div className="workspace">● Science Laboratory　⌄</div><label>MAIN MENU</label><nav>{nav.map((n,i)=><button className={page===n?'active':''} onClick={()=>go(n)} key={n}>{['⌂','▤','▥','♙','↔','✓','▥'][i]} {n}</button>)}</nav>{currentUser?.role === 'Admin' && <><label>ADMINISTRATION</label><nav>{admin.map(n=><button className={page===n?'active':''} onClick={()=>go(n)} key={n}>⚙ {n}</button>)}</nav></>}</aside>
+    <aside className={mobile ? 'side open' : 'side'}><div className="brand"><b>⌁</b><span><strong>VSU InventoScan</strong><small>Inventory system</small></span></div><div className="sidebar-user"><div className="user-avatar">{(currentUser?.full_name || 'U').charAt(0).toUpperCase()}</div><div><b>{currentUser?.full_name || 'Loading user...'}</b><small>{currentUser?.email || ''}</small><span>{currentUser?.role || 'Operator'}</span></div><button className="user-menu-toggle" onClick={()=>setUserMenu(!userMenu)} aria-label="Open user menu">⌄</button>{userMenu&&<button className="logout user-menu-logout" onClick={()=>supabase?.auth.signOut()}>Log out</button>}</div><div className="workspace">● Science Laboratory　⌄</div><label>MAIN MENU</label><nav>{nav.map((n,i)=><button className={page===n?'active':''} onClick={()=>go(n)} key={n}>{['⌂','▤','▥','▦','↕','♙','↔','✓','▥','▧'][i]} {n}</button>)}</nav>{currentUser?.role === 'Admin' && <><label>ADMINISTRATION</label><nav>{admin.map(n=><button className={page===n?'active':''} onClick={()=>go(n)} key={n}>⚙ {n}</button>)}</nav></>}</aside>
     <main><header><button className="mobile" onClick={()=>setMobile(!mobile)}>☰</button><div><label>SUPABASE DATABASE</label><h1>{page}</h1><p>{isSupabaseConfigured?'Live data connection':'Environment variables are missing'}</p></div><div className="head"><span>{isSupabaseConfigured?'Connected':'Not connected'}</span><button className="logout" onClick={()=>supabase?.auth.signOut()}>Log out</button></div></header>
     {error && <div className="connection-error"><b>Database connection error:</b> {error}</div>}
-    {page==='Dashboard' && <section className="stats">{[['Total units',units.length,'From Supabase','▤'],['Available',count('available'),'Live inventory count','✓'],['Borrowed',count('borrowed'),'Live inventory count','↗'],['Needs attention',units.filter(u=>u.status==='under_maintenance'||u.condition==='damaged').length,'Damaged or maintenance','!']].map((x,i)=><div className="stat" key={x[0]}><i className={'c'+i}>{x[3]}</i><small>{x[0]}</small><strong>{loading?'…':x[1]}</strong><em>{x[2]}</em></div>)}</section>}
-    {page==='Scan QR' && <Scanner />}
-    {(page==='Dashboard'||page==='Shelves'||page==='Inventory') && <section className="card page"><div className="cardhead"><div><h2>{page==='Dashboard'?'Shelves from Supabase':page}</h2><p>{loading?'Loading database records…':shelves.length+' shelf records loaded from Supabase'}</p></div><Badge tone={error?'bad':''}>{loading?'Loading':error?'Error':'Connected'}</Badge></div>{page!=='Dashboard'&&<div className="search">⌕ <input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Search shelves..."/></div>}{!loading&&!error&&!shelves.length&&<div className="empty">No shelves found. Run seed.sql in Supabase, then refresh.</div>}<div className="shelves">{shelves.map(s=><article className="shelf" key={s.id} onClick={()=>setSelectedShelf(s)}><div><i>▥</i><Badge>{(s.inventory_units||[]).filter(u=>u.status==='available').length} available</Badge></div><h2>{s.name}</h2><p>{s.code} · {s.item_type}</p><hr/><small><b>{(s.inventory_units||[]).length}</b> total units <span>{(s.inventory_units||[]).filter(u=>u.status==='borrowed').length} borrowed</span></small></article>)}</div></section>}
+    {page==='Dashboard' && <section className="stats">{[['Total units',units.length,'From Supabase','▤'],['Available',dbShelves.reduce((total, shelf) => total + getAvailableUnits(shelf).length, 0),'Live inventory count','✓'],['Borrowed',count('borrowed'),'Live inventory count','↗'],['Needs attention',units.filter(u=>u.status==='under_maintenance'||u.condition==='damaged').length,'Damaged or maintenance','!']].map((x,i)=><div className="stat" key={x[0]}><i className={'c'+i}>{x[3]}</i><small>{x[0]}</small><strong>{loading?'…':x[1]}</strong><em>{x[2]}</em></div>)}</section>}
+    {page==='Dashboard' && !loading && !error && <LowStockAlerts shelves={dbShelves}/>}
+    {page==='Items' && <ItemManagement shelves={dbShelves} onChange={refreshInventory} onQR={setSelectedShelf}/>}
+    {page==='Stock Movements' && <StockMovements shelves={dbShelves} onChange={refreshInventory}/>}
+    {page==='Reports' && !loading && !error && <Reports shelves={dbShelves}/>}
+    {page==='Scan QR' && <Scanner onChange={refreshInventory}/>}
+    {(page==='Dashboard'||page==='Shelves'||page==='Inventory') && <section className="card page"><div className="cardhead"><div><h2>{page==='Dashboard'?'Shelves from Supabase':page}</h2><p>{loading?'Loading database records…':shelves.length+' shelf records loaded from Supabase'}</p></div><Badge tone={error?'bad':''}>{loading?'Loading':error?'Error':'Connected'}</Badge></div>{page!=='Dashboard'&&<div className="search">⌕ <input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Search shelves..."/></div>}{!loading&&!error&&!shelves.length&&<div className="empty">No shelves found. Run seed.sql in Supabase, then refresh.</div>}<div className="shelves">{shelves.map(s=><article className="shelf" key={s.id} onClick={()=>setSelectedShelf(s)}><div><i>▥</i><Badge>{getAvailableUnits(s).length} available</Badge></div><h2>{s.name}</h2><p>{s.code} · {s.item_type}</p><hr/><small><b>{activeUnits(s).length}</b> total units <span>{activeUnits(s).filter(u=>u.status==='borrowed').length} borrowed</span></small></article>)}</div></section>}
     {selectedShelf && <ShelfQR shelf={selectedShelf} close={()=>setSelectedShelf(null)} />}
-    {page!=='Dashboard'&&page!=='Scan QR'&&page!=='Shelves'&&page!=='Inventory'&&<DatabaseTable page={page}/>} 
+    {!['Dashboard','Scan QR','Shelves','Inventory','Items','Stock Movements','Reports'].includes(page)&&<DatabaseTable key={page} page={page} onChange={refreshInventory}/>}
     </main></div>
 }
 
 function MainBrand() {
-  return <div className="main-brand-user"><div className="brand"><b>⌁</b><span><strong>Stockly</strong><small>Inventory system</small></span></div></div>
+  return <div className="main-brand-user"><div className="brand"><b>⌁</b><span><strong>VSU InventoScan</strong><small>Inventory system</small></span></div></div>
 }
 
-function Scanner() {
-  const [value, setValue] = useState(''), [result, setResult] = useState(null), [error, setError] = useState(''), [scanning, setScanning] = useState(false), [borrowers, setBorrowers] = useState([]), [borrowerId, setBorrowerId] = useState(''), [borrowerName, setBorrowerName] = useState(''), [identity, setIdentity] = useState(''), [unitId, setUnitId] = useState(''), [done, setDone] = useState(''), [statusFilter, setStatusFilter] = useState('available'), [operatorName, setOperatorName] = useState('Operator')
+function Scanner({ onChange }) {
+  const [checkingOut, setCheckingOut] = useState(false)
+  const [value, setValue] = useState(''), [result, setResult] = useState(null), [error, setError] = useState(''), [scanning, setScanning] = useState(false), [borrowers, setBorrowers] = useState([]), [borrowerId, setBorrowerId] = useState(''), [borrowerName, setBorrowerName] = useState(''), [identity, setIdentity] = useState(''), [unitId, setUnitId] = useState(''), [done, setDone] = useState(''), [statusFilter, setStatusFilter] = useState('available')
   const video = useRef(null), stream = useRef(null)
-  useEffect(() => { supabase?.auth.getUser().then(({ data }) => setOperatorName(data.user?.user_metadata?.full_name || data.user?.email || 'Operator')); return () => stream.current?.getTracks().forEach(track => track.stop()) }, [])
+  useEffect(() => () => stream.current?.getTracks().forEach(track => track.stop()), [])
   async function startCamera() {
     setError(''); setResult(null)
     if (!('BarcodeDetector' in window)) { setError('QR scanning is not supported by this browser. Enter the code manually.'); return }
@@ -62,13 +81,38 @@ function Scanner() {
   async function lookup(code = value) {
     if (!code.trim()) return
     setError(''); setResult(null)
-    const { data, error: queryError } = await supabase.from('shelves').select('*, inventory_units(*)').eq('qr_value', code.trim()).maybeSingle()
-    if (queryError) setError(queryError.message); else if (!data) setError('No shelf found for this QR code.'); else { setResult(data); setUnitId(''); const response = await fetchBorrowers(); setBorrowers(response.data || []) }
+    const { data, error: queryError } = await fetchShelfByQR(code)
+    if (queryError) setError(queryError.message); else if (!data) setError('No shelf found for this QR code.'); else { setResult(data); setUnitId(''); const response = await fetchBorrowers(); if (response.error) setError(response.error.message); else setBorrowers(response.data || []) }
   }
-  async function checkout(e) { e.preventDefault(); setError(''); setDone(''); if (!unitId) { setError('Select an available item.'); return } let borrower = borrowerId ? borrowers.find(b => b.id === borrowerId) : null; if (!borrower) { if (!borrowerName.trim() || !identity.trim()) { setError('Select a borrower or enter a name and ID.'); return }; const added = await supabase.from('borrowers').insert({ name: borrowerName.trim(), identity_number: identity.trim() }).select().single(); if (added.error) { setError(added.error.message); return }; borrower = added.data } const transaction = await supabase.from('transactions').insert({ borrower_id: borrower.id, unit_id: unitId, expected_return_at: new Date(Date.now() + 14 * 86400000).toISOString().slice(0, 10), borrowed_by: operatorName }); if (transaction.error) { setError(transaction.error.message); return }; const updated = await supabase.from('inventory_units').update({ status: 'borrowed' }).eq('id', unitId); if (updated.error) { setError(updated.error.message); return }; setDone('Item checked out successfully.'); setResult({ ...result, inventory_units: result.inventory_units.map(u => u.id === unitId ? { ...u, status: 'borrowed' } : u) }); setUnitId(''); setBorrowerId(''); setBorrowerName(''); setIdentity('') }
-  const availableUnits = result?.inventory_units.filter(unit => unit.status === 'available') || []
-  const filteredUnits = result?.inventory_units.filter(unit => unit.status === statusFilter) || []
-  return <section className="card page scanner-page"><div className="cardhead"><div><h2>Scan inventory QR</h2><p>Scan a shelf label to view its live stock.</p></div><Badge>Operator</Badge></div><div className="scanner-grid"><div className="scanner-camera"><video ref={video} muted playsInline /><div className={scanning ? 'scan-line active' : 'scan-line'}></div>{!scanning && <div className="camera-placeholder">▣<span>Camera preview</span></div>}</div><div className="scanner-controls"><button className="primary" onClick={scanning ? stopCamera : startCamera}>{scanning ? 'Stop camera' : 'Open camera'}</button><div className="or">or enter the QR value</div><div className="scan-input"><input value={value} onChange={e => setValue(e.target.value)} onKeyDown={e => e.key === 'Enter' && lookup()} placeholder="e.g. SHELF-A-01"/><button onClick={() => lookup()}>Search</button></div><small>Allow camera access when prompted. Manual entry works on every device.</small>{error && <div className="connection-error">{error}</div>}</div></div>{result && <div className="scan-result"><div className="result-title"><div><span className="eyebrow">SHELF FOUND</span><h2>{result.name}</h2><p>{result.code} · {result.item_type}</p></div><Badge>{result.inventory_units.length} units</Badge></div><div className="status-filter"><label>Show items</label><select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}><option value="available">Available</option><option value="borrowed">Borrowed</option></select></div><div className="unit-list">{filteredUnits.length ? filteredUnits.map(unit => <div className="unit-row" key={unit.id}><b>Unit {String(unit.unit_number).padStart(3, '0')}</b><Badge tone={unit.status==='available'?'':'neutral'}>{unit.status.replace('_',' ')}</Badge><span>{unit.condition}</span></div>) : <div className="empty">No {statusFilter} items on this shelf.</div>}</div><form className="checkout-form" onSubmit={checkout}><h3>Check out an item</h3><label>Borrower<select value={borrowerId} onChange={e => setBorrowerId(e.target.value)}><option value="">Choose a borrower...</option>{borrowers.map(b => <option key={b.id} value={b.id}>{b.name} · {b.identity_number}</option>)}</select></label><div className="new-borrower"><label>New borrower name<input value={borrowerName} onChange={e => { setBorrowerName(e.target.value); setBorrowerId('') }} placeholder="Optional if not listed" /></label><label>Student / employee ID<input value={identity} onChange={e => { setIdentity(e.target.value); setBorrowerId('') }} placeholder="Optional if not listed" /></label></div><label>Item from this shelf<select value={unitId} onChange={e => setUnitId(e.target.value)}><option value="">Choose an available item...</option>{availableUnits.map(unit => <option key={unit.id} value={unit.id}>Unit {String(unit.unit_number).padStart(3, '0')} · {unit.condition}</option>)}</select></label><button className="primary" type="submit" disabled={!availableUnits.length}>{availableUnits.length ? 'Confirm checkout' : 'No available items'}</button>{done && <div className="success-message">{done}</div>}</form></div>}</section>
+  async function checkout(e) {
+    e.preventDefault()
+    if (checkingOut) return
+    setError(''); setDone('')
+    if (!unitId) { setError('Select an available item.'); return }
+    setCheckingOut(true)
+    try {
+      let borrower = borrowerId ? borrowers.find(b => b.id === borrowerId) : null
+      if (!borrower) {
+        if (!borrowerName.trim() || !identity.trim()) throw new Error('Select a borrower or enter a name and ID.')
+        const added = await supabase.from('borrowers').insert({ name: borrowerName.trim(), identity_number: identity.trim() }).select().single()
+        if (added.error) throw added.error
+        borrower = added.data
+        setBorrowers(previous => [...previous, borrower]); setBorrowerId(borrower.id)
+      }
+      const transaction = await supabase.rpc('inventory_checkout', {
+        p_borrower_id: borrower.id, p_unit_id: unitId,
+        p_expected_return: new Date(Date.now() + 14 * 86400000).toISOString().slice(0, 10),
+      })
+      if (transaction.error) throw transaction.error
+      setDone('Item checked out successfully.')
+      setResult(previous => ({ ...previous, inventory_units: previous.inventory_units.map(u => u.id === unitId ? { ...u, status: 'borrowed' } : u) }))
+      setUnitId(''); setBorrowerId(''); setBorrowerName(''); setIdentity('')
+      await onChange()
+    } catch (failure) { setError(failure.message) } finally { setCheckingOut(false) }
+  }
+  const availableUnits = result ? getAvailableUnits(result) : []
+  const filteredUnits = result ? activeUnits(result).filter(unit => unit.status === statusFilter) : []
+  return <section className="card page scanner-page"><div className="cardhead"><div><h2>Scan inventory QR</h2><p>Scan a shelf label to view its live stock.</p></div><Badge>Operator</Badge></div><div className="scanner-grid"><div className="scanner-camera"><video ref={video} muted playsInline /><div className={scanning ? 'scan-line active' : 'scan-line'}></div>{!scanning && <div className="camera-placeholder">▣<span>Camera preview</span></div>}</div><div className="scanner-controls"><button className="primary" onClick={scanning ? stopCamera : startCamera}>{scanning ? 'Stop camera' : 'Open camera'}</button><div className="or">or enter the QR value</div><div className="scan-input"><input value={value} onChange={e => setValue(e.target.value)} onKeyDown={e => e.key === 'Enter' && lookup()} placeholder="e.g. SHELF-A-01"/><button onClick={() => lookup()}>Search</button></div><small>Allow camera access when prompted. Manual entry works on every device.</small>{error && <div className="connection-error">{error}</div>}</div></div>{result && <div className="scan-result"><div className="result-title"><div><span className="eyebrow">SHELF FOUND</span><h2>{result.name}</h2><p>{result.code} · {result.item_type}</p></div><Badge>{activeUnits(result).length} units</Badge></div><div className="status-filter"><label>Show items</label><select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}><option value="available">Available</option><option value="borrowed">Borrowed</option></select></div><div className="unit-list">{filteredUnits.length ? filteredUnits.map(unit => <div className="unit-row" key={unit.id}><b>Unit {String(unit.unit_number).padStart(3, '0')}</b><Badge tone={unit.status==='available'?'':'neutral'}>{unit.status.replace('_',' ')}</Badge><span>{unit.condition}</span></div>) : <div className="empty">No {statusFilter} items on this shelf.</div>}</div><form className="checkout-form" onSubmit={checkout}><h3>Check out an item</h3><label>Borrower<select value={borrowerId} onChange={e => setBorrowerId(e.target.value)}><option value="">Choose a borrower...</option>{borrowers.map(b => <option key={b.id} value={b.id}>{b.name} · {b.identity_number}</option>)}</select></label><div className="new-borrower"><label>New borrower name<input value={borrowerName} onChange={e => { setBorrowerName(e.target.value); setBorrowerId('') }} placeholder="Optional if not listed" /></label><label>Student / employee ID<input value={identity} onChange={e => { setIdentity(e.target.value); setBorrowerId('') }} placeholder="Optional if not listed" /></label></div><label>Item from this shelf<select value={unitId} onChange={e => setUnitId(e.target.value)}><option value="">Choose an available item...</option>{availableUnits.map(unit => <option key={unit.id} value={unit.id}>Unit {String(unit.unit_number).padStart(3, '0')} · {unit.condition}</option>)}</select></label><button className="primary" type="submit" disabled={checkingOut || !availableUnits.length}>{availableUnits.length ? 'Confirm checkout' : 'No available items'}</button>{done && <div className="success-message">{done}</div>}</form></div>}</section>
 }
 
 function ShelfQR({ shelf, close }) {
@@ -78,7 +122,8 @@ function ShelfQR({ shelf, close }) {
   return <div className="backdrop" onClick={close}><div className="modal qr-modal" onClick={e=>e.stopPropagation()}><button className="x" onClick={close}>×</button><span className="eyebrow">ITEM QR CODE</span><h2>{shelf.name}</h2><p>{shelf.code} · {shelf.item_type}</p>{image ? <img className="qr-image" src={image} alt={`QR code for ${shelf.name}`} /> : <div className="qr">Generating…</div>}<code className="qr-value">{shelf.qr_value}</code><button className="primary full" onClick={download} disabled={!image}>Download QR</button></div></div>
 }
 
-function DatabaseTable({ page }) {
+function DatabaseTable({ page, onChange }) {
+  const [returnBusy, setReturnBusy] = useState(false)
   const [rows, setRows] = useState([]), [loading, setLoading] = useState(true), [error, setError] = useState('')
   const [roleFilter, setRoleFilter] = useState('All')
   const [transactionFilter, setTransactionFilter] = useState('all')
@@ -87,8 +132,17 @@ function DatabaseTable({ page }) {
   const isBorrowers = page === 'Borrowers', isReturns = page === 'Returns', isHistory = page === 'Transaction History', isAdmins = page === 'Admins', isUsers = page === 'Users', isApprovals = page === 'Admin Approvals'
   const activeReturns = rows.filter(r => !r.returned_at)
   async function returnItem(row) { setReturning(row); setReturnCondition('good') }
-  async function confirmReturn() { if (!returning) return; const { data: authData } = await supabase.auth.getUser(); const returnedBy = authData.user?.user_metadata?.full_name || authData.user?.email || 'Operator'; const returnedAt = new Date().toISOString(); const transaction = await supabase.from('transactions').update({ returned_at: returnedAt, return_status: 'returned', return_condition: returnCondition, returned_by: returnedBy }).eq('id', returning.id); if (transaction.error) { setError(transaction.error.message); return } const unit = await supabase.from('inventory_units').update({ status: 'available' }).eq('id', returning.unit_id); if (unit.error) { setError(unit.error.message); return } setRows(rows.filter(item => item.id !== returning.id)); setReturning(null) }
-  const returnModal = returning && <div className="modal-backdrop"><div className="return-modal"><div className="return-modal-icon">↩</div><span className="eyebrow">PROCESS RETURN</span><h2>Return item</h2><p>Confirm the condition of <b>{returning.inventory_units?.shelves?.code || 'the item'} #{String(returning.inventory_units?.unit_number || '').padStart(3,'0')}</b> returned by <b>{returning.borrowers?.name || 'the borrower'}</b>.</p><label>Return condition<select value={returnCondition} onChange={e=>setReturnCondition(e.target.value)}><option value="good">Good</option><option value="fair">Fair</option><option value="damaged">Damaged</option></select></label><div className="return-modal-actions"><button className="secondary" onClick={()=>setReturning(null)}>Cancel</button><button className="primary" onClick={confirmReturn}>Confirm return</button></div></div></div>
+  async function confirmReturn() {
+    if (!returning || returnBusy) return
+    setReturnBusy(true); setError('')
+    try {
+      const { error: failure } = await supabase.rpc('inventory_return', { p_transaction_id: returning.id, p_condition: returnCondition })
+      if (failure) throw failure
+      setRows(previous => previous.filter(item => item.id !== returning.id)); setReturning(null)
+      await onChange()
+    } catch (failure) { setError(failure.message) } finally { setReturnBusy(false) }
+  }
+  const returnModal = returning && <div className="modal-backdrop"><div className="return-modal"><div className="return-modal-icon">↩</div><span className="eyebrow">PROCESS RETURN</span><h2>Return item</h2><p>Confirm the condition of <b>{returning.inventory_units?.shelves?.code || 'the item'} #{String(returning.inventory_units?.unit_number || '').padStart(3,'0')}</b> returned by <b>{returning.borrowers?.name || 'the borrower'}</b>.</p><label>Return condition<select disabled={returnBusy} value={returnCondition} onChange={e=>setReturnCondition(e.target.value)}><option value="good">Good</option><option value="damaged">Damaged</option></select></label>{error && <div role="alert" className="connection-error">{error}</div>}<div className="return-modal-actions"><button className="secondary" onClick={()=>setReturning(null)} disabled={returnBusy}>Cancel</button><button className="primary" onClick={confirmReturn} disabled={returnBusy}>Confirm return</button></div></div></div>
   const visibleUsers = rows.filter(r => roleFilter === 'All' || r.role === roleFilter)
   async function changeRole(user, role) { const { error: x } = await supabase.from('user_accounts').update({ role }).eq('id', user.id); if (x) setError(x.message); else setRows(rows.map(r => r.id === user.id ? { ...r, role } : r)) }
   if (isUsers) return <section className="card page"><div className="cardhead"><div><h2>Users</h2><p>Manage Admin and Operator accounts</p></div><Badge>{visibleUsers.length} users</Badge></div><div className="toolbar"><div className="search"><input placeholder="Search users..." onChange={e => setRows(rows.filter(r => r.full_name.toLowerCase().includes(e.target.value.toLowerCase()) || r.email.toLowerCase().includes(e.target.value.toLowerCase())))} /></div><select value={roleFilter} onChange={e => setRoleFilter(e.target.value)}><option>All</option><option>Admin</option><option>Operator</option></select></div><table><thead><tr><th>NAME</th><th>EMAIL</th><th>ROLE</th><th>STATUS</th><th>CHANGE ROLE</th></tr></thead><tbody>{visibleUsers.map(r => <tr key={r.id}><td><b>{r.full_name}</b></td><td>{r.email}</td><td><Badge>{r.role}</Badge></td><td>{r.status}</td><td><select value={r.role} onChange={e => changeRole(r,e.target.value)}><option>Admin</option><option>Operator</option></select></td></tr>)}</tbody></table></section>
