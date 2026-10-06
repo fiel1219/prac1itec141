@@ -19,10 +19,11 @@ export default function App() {
   const [currentUser,setCurrentUser] = useState(null)
   const [userMenu,setUserMenu] = useState(false)
   const [selectedShelf,setSelectedShelf] = useState(null)
+  const [migrationRequired,setMigrationRequired] = useState(false)
   async function refreshInventory() {
-    const { data, error: failure } = await fetchShelves()
+    const { data, error: failure, migrationRequired: needsMigration } = await fetchShelves()
     if (failure) setError(failure.message)
-    else { setDbShelves(data || []); setError('') }
+    else { setDbShelves(data || []); setMigrationRequired(Boolean(needsMigration)); setError('') }
     setLoading(false)
   }
   useEffect(() => {
@@ -41,15 +42,16 @@ export default function App() {
     <aside className={mobile ? 'side open' : 'side'}><div className="brand"><b>⌁</b><span><strong>VSU InventoScan</strong><small>Inventory system</small></span></div><div className="sidebar-user"><div className="user-avatar">{(currentUser?.full_name || 'U').charAt(0).toUpperCase()}</div><div><b>{currentUser?.full_name || 'Loading user...'}</b><small>{currentUser?.email || ''}</small><span>{currentUser?.role || 'Operator'}</span></div><button className="user-menu-toggle" onClick={()=>setUserMenu(!userMenu)} aria-label="Open user menu">⌄</button>{userMenu&&<button className="logout user-menu-logout" onClick={()=>supabase?.auth.signOut()}>Log out</button>}</div><div className="workspace">● Science Laboratory　⌄</div><label>MAIN MENU</label><nav>{nav.map((n,i)=><button className={page===n?'active':''} onClick={()=>go(n)} key={n}>{['⌂','▤','▥','▦','↕','♙','↔','✓','▥','▧'][i]} {n}</button>)}</nav>{currentUser?.role === 'Admin' && <><label>ADMINISTRATION</label><nav>{admin.map(n=><button className={page===n?'active':''} onClick={()=>go(n)} key={n}>⚙ {n}</button>)}</nav></>}</aside>
     <main><header><button className="mobile" onClick={()=>setMobile(!mobile)}>☰</button><div><label>SUPABASE DATABASE</label><h1>{page}</h1><p>{isSupabaseConfigured?'Live data connection':'Environment variables are missing'}</p></div><div className="head"><span>{isSupabaseConfigured?'Connected':'Not connected'}</span><button className="logout" onClick={()=>supabase?.auth.signOut()}>Log out</button></div></header>
     {error && <div className="connection-error"><b>Database connection error:</b> {error}</div>}
+    {migrationRequired && <section className="card inventory-alerts" role="status"><h2>Inventory update needs database setup</h2><p>Your inventory is available to view. To enable item management, stock movements, reports, and checkout/returns, run <code>supabase/inventoscan_features.sql</code> in your Supabase SQL Editor, then refresh this page.</p></section>}
     {page==='Dashboard' && <section className="stats">{[['Total units',units.length,'From Supabase','▤'],['Available',dbShelves.reduce((total, shelf) => total + getAvailableUnits(shelf).length, 0),'Live inventory count','✓'],['Borrowed',count('borrowed'),'Live inventory count','↗'],['Needs attention',units.filter(u=>u.status==='under_maintenance'||u.condition==='damaged').length,'Damaged or maintenance','!']].map((x,i)=><div className="stat" key={x[0]}><i className={'c'+i}>{x[3]}</i><small>{x[0]}</small><strong>{loading?'…':x[1]}</strong><em>{x[2]}</em></div>)}</section>}
-    {page==='Dashboard' && !loading && !error && <LowStockAlerts shelves={dbShelves}/>}
-    {page==='Items' && <ItemManagement shelves={dbShelves} onChange={refreshInventory} onQR={setSelectedShelf}/>}
-    {page==='Stock Movements' && <StockMovements shelves={dbShelves} onChange={refreshInventory}/>}
-    {page==='Reports' && !loading && !error && <Reports shelves={dbShelves}/>}
-    {page==='Scan QR' && <Scanner onChange={refreshInventory}/>}
+    {page==='Dashboard' && !loading && !error && !migrationRequired && <LowStockAlerts shelves={dbShelves}/>}
+    {page==='Items' && !migrationRequired && <ItemManagement shelves={dbShelves} onChange={refreshInventory} onQR={setSelectedShelf}/>}
+    {page==='Stock Movements' && !migrationRequired && <StockMovements shelves={dbShelves} onChange={refreshInventory}/>}
+    {page==='Reports' && !loading && !error && !migrationRequired && <Reports shelves={dbShelves}/>}
+    {page==='Scan QR' && <Scanner onChange={refreshInventory} migrationRequired={migrationRequired}/>}
     {(page==='Dashboard'||page==='Shelves'||page==='Inventory') && <section className="card page"><div className="cardhead"><div><h2>{page==='Dashboard'?'Shelves from Supabase':page}</h2><p>{loading?'Loading database records…':shelves.length+' shelf records loaded from Supabase'}</p></div><Badge tone={error?'bad':''}>{loading?'Loading':error?'Error':'Connected'}</Badge></div>{page!=='Dashboard'&&<div className="search">⌕ <input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Search shelves..."/></div>}{!loading&&!error&&!shelves.length&&<div className="empty">No shelves found. Run seed.sql in Supabase, then refresh.</div>}<div className="shelves">{shelves.map(s=><article className="shelf" key={s.id} onClick={()=>setSelectedShelf(s)}><div><i>▥</i><Badge>{getAvailableUnits(s).length} available</Badge></div><h2>{s.name}</h2><p>{s.code} · {s.item_type}</p><hr/><small><b>{activeUnits(s).length}</b> total units <span>{activeUnits(s).filter(u=>u.status==='borrowed').length} borrowed</span></small></article>)}</div></section>}
     {selectedShelf && <ShelfQR shelf={selectedShelf} close={()=>setSelectedShelf(null)} />}
-    {!['Dashboard','Scan QR','Shelves','Inventory','Items','Stock Movements','Reports'].includes(page)&&<DatabaseTable key={page} page={page} onChange={refreshInventory}/>}
+    {!['Dashboard','Scan QR','Shelves','Inventory','Items','Stock Movements','Reports'].includes(page)&&<DatabaseTable key={page} page={page} onChange={refreshInventory} migrationRequired={migrationRequired}/>}
     </main></div>
 }
 
@@ -57,7 +59,7 @@ function MainBrand() {
   return <div className="main-brand-user"><div className="brand"><b>⌁</b><span><strong>VSU InventoScan</strong><small>Inventory system</small></span></div></div>
 }
 
-function Scanner({ onChange }) {
+function Scanner({ onChange, migrationRequired }) {
   const [checkingOut, setCheckingOut] = useState(false)
   const [value, setValue] = useState(''), [result, setResult] = useState(null), [error, setError] = useState(''), [scanning, setScanning] = useState(false), [borrowers, setBorrowers] = useState([]), [borrowerId, setBorrowerId] = useState(''), [borrowerName, setBorrowerName] = useState(''), [identity, setIdentity] = useState(''), [unitId, setUnitId] = useState(''), [done, setDone] = useState(''), [statusFilter, setStatusFilter] = useState('available')
   const video = useRef(null), stream = useRef(null)
@@ -86,6 +88,7 @@ function Scanner({ onChange }) {
   }
   async function checkout(e) {
     e.preventDefault()
+    if (migrationRequired) { setError('Complete the database setup shown above before checking out items.'); return }
     if (checkingOut) return
     setError(''); setDone('')
     if (!unitId) { setError('Select an available item.'); return }
@@ -122,7 +125,7 @@ function ShelfQR({ shelf, close }) {
   return <div className="backdrop" onClick={close}><div className="modal qr-modal" onClick={e=>e.stopPropagation()}><button className="x" onClick={close}>×</button><span className="eyebrow">ITEM QR CODE</span><h2>{shelf.name}</h2><p>{shelf.code} · {shelf.item_type}</p>{image ? <img className="qr-image" src={image} alt={`QR code for ${shelf.name}`} /> : <div className="qr">Generating…</div>}<code className="qr-value">{shelf.qr_value}</code><button className="primary full" onClick={download} disabled={!image}>Download QR</button></div></div>
 }
 
-function DatabaseTable({ page, onChange }) {
+function DatabaseTable({ page, onChange, migrationRequired }) {
   const [returnBusy, setReturnBusy] = useState(false)
   const [rows, setRows] = useState([]), [loading, setLoading] = useState(true), [error, setError] = useState('')
   const [roleFilter, setRoleFilter] = useState('All')
@@ -133,6 +136,7 @@ function DatabaseTable({ page, onChange }) {
   const activeReturns = rows.filter(r => !r.returned_at)
   async function returnItem(row) { setReturning(row); setReturnCondition('good') }
   async function confirmReturn() {
+    if (migrationRequired) { setError('Complete the database setup shown above before returning items.'); return }
     if (!returning || returnBusy) return
     setReturnBusy(true); setError('')
     try {

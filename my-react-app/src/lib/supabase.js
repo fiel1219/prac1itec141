@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import { loadInventoryUnits, inventoryMigrationRequired } from './inventoryData'
 
 const url = import.meta.env.VITE_SUPABASE_URL
 const key = import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -8,25 +9,23 @@ export const isSupabaseConfigured = Boolean(supabase)
 
 export async function fetchShelves() {
   if (!supabase) return { data: null, error: new Error('Supabase is not configured') }
-  const shelves = [], units = []
+  const shelves = []
   for (let offset = 0; ; offset += 500) {
     const { data, error } = await supabase.from('shelves').select('*').eq('status', 'active').order('code').range(offset, offset + 499)
     if (error) return { data: null, error }
     shelves.push(...data)
     if (data.length < 500) break
   }
-  for (let offset = 0; ; offset += 500) {
-    const { data, error } = await supabase.from('inventory_units').select('*').is('retired_at', null).order('id').range(offset, offset + 499)
-    if (error) return { data: null, error }
-    units.push(...data)
-    if (data.length < 500) break
-  }
+  const { data: units, error: unitError } = await loadInventoryUnits(supabase)
+  if (unitError) return { data: null, error: unitError }
+  const { required, error: schemaError } = await inventoryMigrationRequired(supabase)
+  if (schemaError) return { data: null, error: schemaError }
   const grouped = new Map()
   for (const unit of units) {
     if (!grouped.has(unit.shelf_id)) grouped.set(unit.shelf_id, [])
     grouped.get(unit.shelf_id).push(unit)
   }
-  return { data: shelves.map(shelf => ({ ...shelf, inventory_units: (grouped.get(shelf.id) || []).sort((a,b) => a.unit_number-b.unit_number) })), error: null }
+  return { data: shelves.map(shelf => ({ ...shelf, inventory_units: (grouped.get(shelf.id) || []).sort((a,b) => a.unit_number-b.unit_number) })), error: null, migrationRequired: required }
 }
 
 export async function fetchBorrowers() {
@@ -38,13 +37,8 @@ export async function fetchShelfByQR(code) {
   if (!supabase) return { data: null, error: new Error('Supabase is not configured') }
   const { data: shelf, error } = await supabase.from('shelves').select('*').eq('qr_value',code.trim()).eq('status','active').maybeSingle()
   if (error || !shelf) return { data: shelf, error }
-  const units = []
-  for (let offset = 0; ; offset += 500) {
-    const { data, error: failure } = await supabase.from('inventory_units').select('*').eq('shelf_id',shelf.id).is('retired_at',null).order('unit_number').range(offset,offset+499)
-    if (failure) return { data: null, error: failure }
-    units.push(...data)
-    if (data.length < 500) break
-  }
+  const { data: units, error: failure } = await loadInventoryUnits(supabase, shelf.id)
+  if (failure) return { data: null, error: failure }
   return { data: { ...shelf, inventory_units: units }, error: null }
 }
 

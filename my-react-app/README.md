@@ -22,6 +22,17 @@ npm run dev
 
 ## Features
 
+### Demo login accounts
+
+Run the entire `supabase/demo_accounts.sql` script in Supabase SQL Editor after the existing `user_accounts` table is set up. It creates confirmed email/password Auth users, email identities, and active application accounts. Refresh the login page and click Operator or Admin under "Try a demo account" to sign in directly.
+
+| Role | Email | Password |
+| --- | --- | --- |
+| Operator | demo.operator@inventoscan.test | InventoOperator2026! |
+| Admin | demo.admin@inventoscan.test | InventoAdmin2026! |
+
+These credentials are deliberately public and provide real role access; use demo inventory data. The SQL is safe to rerun and resets only accounts marked as demo users. It refuses to overwrite a non-demo Auth user with the same email.
+
 - **Items:** add and edit shelves and product types, set low-stock thresholds, edit unit status/condition/comments, and generate QR labels. Empty shelves can be archived. Archive and stock removal preserve transaction history.
 - **Stock Movements:** receive 1–1000 new numbered units per operation, or remove available units with a required reason. Unit numbers are never reused. Borrowed, damaged, and maintenance units cannot be removed as available stock; return or resolve their condition first.
 - **Scan QR / Returns:** existing shelf QR scanning and manual lookup, with atomic checkout/return functions. Damaged returns go to maintenance. The invalid fair-condition option has been removed to match the database enum.
