@@ -90,7 +90,7 @@ export function ItemManagement({ shelves, onChange, onQR, onUnitQR }) {
     } finally { setBusy(false) }
   }
   return <section className="card page inventory-feature item-management">
-    <div className="cardhead"><div><h2>Items</h2><p>{allEquipment.length} equipment · {allConsumables.length} consumable items</p></div></div>
+    <div className="cardhead"><div><h2>Equipment and Consumables</h2><p>{allEquipment.length} equipment · {allConsumables.length} consumable items</p></div></div>
     <Message error={error} success={success}/>
     <label className="inventory-search">Search items<input aria-label="Search items" value={query} onChange={event => setQuery(event.target.value)} placeholder="Name, reference, or description"/></label>
     {unit && editingShelf && <form ref={editForm} className="inventory-form" aria-label="Edit item" onSubmit={save}>
@@ -153,12 +153,12 @@ export function StockMovements({ shelves, onChange, itemNamesRequired = false, i
   </form></section><MovementReport key={revision} laboratoryId={laboratoryId} shelves={shelves} title="Stock movement history"/></>
 }
 
-export function Reports({ shelves, laboratoryId }) {
+export function Reports({ shelves }) {
   const [query, setQuery] = useState(''), [onlyLow, setOnlyLow] = useState(false)
   const summary = inventorySummary(shelves).filter(row => `${row.code} ${row.name} ${row.item_type}`.toLowerCase().includes(query.toLowerCase()) && (!onlyLow || row.low_stock === 'Yes'))
   const fields = ['code','name','item_type','category','total','available','borrowed','damaged','maintenance','missing','threshold','low_stock']
   const headers = ['Code','Name','Item type','Category','Total','Available','Borrowed','Damaged','Maintenance','Missing / not found','Threshold','Low stock']
-  return <><section className="card inventory-feature"><div className="cardhead"><div><h2>Inventory summary</h2><p>Current active inventory. Damaged and maintenance counts may overlap.</p></div><button className="primary" onClick={() => downloadCsv('inventoscan-inventory.csv',headers,summary.map(row => fields.map(field => row[field])))}>Export summary CSV</button></div><div className="inventory-filters"><label>Search<input value={query} onChange={event => setQuery(event.target.value)} placeholder="Shelf or item type"/></label><label className="inventory-checkbox"><input type="checkbox" checked={onlyLow} onChange={event => setOnlyLow(event.target.checked)}/>Low stock only</label></div><div className="inventory-table"><table><thead><tr>{headers.map(header => <th key={header}>{header}</th>)}</tr></thead><tbody>{summary.map(row => <tr key={`${row.code}:${row.inventory_kind}:${row.item_type}`}>{fields.map(field => <td key={field}>{row[field]}</td>)}</tr>)}</tbody></table></div>{!summary.length && <p className="empty">No inventory matches these filters.</p>}</section><MovementReport laboratoryId={laboratoryId} shelves={shelves}/></>
+  return <section className="card inventory-feature"><div className="cardhead"><div><h2>Inventory summary</h2><p>Current active inventory. Damaged and maintenance counts may overlap.</p></div><button className="primary" onClick={() => downloadCsv('inventoscan-inventory.csv',headers,summary.map(row => fields.map(field => row[field])))}>Export summary CSV</button></div><div className="inventory-filters"><label>Search<input value={query} onChange={event => setQuery(event.target.value)} placeholder="Shelf or item type"/></label><label className="inventory-checkbox"><input type="checkbox" checked={onlyLow} onChange={event => setOnlyLow(event.target.checked)}/>Low stock only</label></div><div className="inventory-table"><table><thead><tr>{headers.map(header => <th key={header}>{header}</th>)}</tr></thead><tbody>{summary.map(row => <tr key={`${row.code}:${row.inventory_kind}:${row.item_type}`}>{fields.map(field => <td key={field}>{row[field]}</td>)}</tr>)}</tbody></table></div>{!summary.length && <p className="empty">No inventory matches these filters.</p>}</section>
 }
 
 function MovementReport({ shelves, title = 'Stock movement report', laboratoryId }) {
