@@ -8,7 +8,7 @@ import { inventoryMigrationRequired } from '../src/lib/inventoryData.js'
 test('unit management setup does not block existing shelf deletion and inventory features', async () => {
   const missing = { code: '42703', message: 'Missing next_unit_number' }
   const client = { from: () => ({ select: column => ({ limit: async () => ({ error: column === 'next_unit_number' ? missing : null }) }) }) }
-  assert.deepEqual(await inventoryMigrationRequired(client), { required: false, unitActionsRequired: true, error: null })
+  assert.deepEqual(await inventoryMigrationRequired(client), { required: false, unitActionsRequired: true, permanentDeleteRequired: false, error: null })
 })
 
 test('schema checks surface access errors instead of presenting them as missing setup', async () => {

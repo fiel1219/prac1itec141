@@ -43,5 +43,9 @@ export async function inventoryMigrationRequired(client) {
   if (unitActionsError && !['42703', '42P01', 'PGRST204', 'PGRST205'].includes(unitActionsError.code)) {
     return { required, error: unitActionsError }
   }
-  return { required, unitActionsRequired: Boolean(unitActionsError), error: null }
+  const { error: permanentDeleteError } = await client.from('stock_movements').select('unit_id_snapshot').limit(0)
+  if (permanentDeleteError && !['42703', '42P01', 'PGRST204', 'PGRST205'].includes(permanentDeleteError.code)) {
+    return { required, error: permanentDeleteError }
+  }
+  return { required, unitActionsRequired: Boolean(unitActionsError), permanentDeleteRequired: Boolean(permanentDeleteError), error: null }
 }

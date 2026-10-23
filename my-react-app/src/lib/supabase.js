@@ -19,14 +19,14 @@ export async function fetchShelves() {
   }
   const { data: units, error: unitError } = await loadInventoryUnits(supabase)
   if (unitError) return { data: null, error: unitError }
-  const { required, unitActionsRequired, error: schemaError } = await inventoryMigrationRequired(supabase)
+  const { required, unitActionsRequired, permanentDeleteRequired, error: schemaError } = await inventoryMigrationRequired(supabase)
   if (schemaError) return { data: null, error: schemaError }
   const grouped = new Map()
   for (const unit of units) {
     if (!grouped.has(unit.shelf_id)) grouped.set(unit.shelf_id, [])
     grouped.get(unit.shelf_id).push(unit)
   }
-  return { data: shelves.map(shelf => ({ ...shelf, inventory_units: (grouped.get(shelf.id) || []).sort((a,b) => a.unit_number-b.unit_number) })), error: null, migrationRequired: required, unitActionsRequired }
+  return { data: shelves.map(shelf => ({ ...shelf, inventory_units: (grouped.get(shelf.id) || []).sort((a,b) => a.unit_number-b.unit_number) })), error: null, migrationRequired: required, unitActionsRequired, permanentDeleteRequired }
 }
 
 export async function fetchBorrowers() {

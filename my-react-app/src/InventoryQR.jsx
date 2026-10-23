@@ -34,7 +34,7 @@ function QRLabel({ shelf, unit }) {
     <button className="primary full" onClick={download} disabled={!image}>Download QR</button></>
 }
 
-export function InventoryLabels({ shelf, shelves = [], close, onChange, migrationRequired = false, unitActionsRequired = false }) {
+export function InventoryLabels({ shelf, shelves = [], close, onChange, migrationRequired = false, unitActionsRequired = false, permanentDeleteRequired = false }) {
   const [unitId, setUnitId] = useState(shelf.qrUnit?.id || null)
   const [deleting, setDeleting] = useState(false), [deleteError, setDeleteError] = useState('')
   const [action, setAction] = useState(null), [destinationId, setDestinationId] = useState(''), [reason, setReason] = useState('')
@@ -72,6 +72,7 @@ export function InventoryLabels({ shelf, shelves = [], close, onChange, migratio
   async function saveUnitAction(event) {
     event.preventDefault()
     if (busy || !actionUnit || migrationRequired || (action.type !== 'return' && (actionsUnavailable || actionUnit.status === 'borrowed'))) return
+    if (action.type === 'delete' && permanentDeleteRequired) return
     setUnitError(''); setSuccess('')
     if (action.type === 'delete' && !reason.trim()) { setUnitError('Enter a reason for deleting this unit.'); return }
     const destination = destinations.find(item => item.id === destinationId)
@@ -100,7 +101,7 @@ export function InventoryLabels({ shelf, shelves = [], close, onChange, migratio
         : await supabase.rpc('inventory_move_unit', { p_unit_id: actionUnit.id, p_destination_shelf_id: destination.id, p_notes: reason.trim() })
       if (error) throw error
       setRemovedIds(previous => [...previous, actionUnit.id])
-      setSuccess(action.type === 'delete' ? `${unitName(actionUnit)} deleted. Its history is kept.` : `${unitName(actionUnit)} moved to ${destination.code}. Its QR code stays the same.`)
+      setSuccess(action.type === 'delete' ? `${unitName(actionUnit)} permanently deleted from the database.` : `${unitName(actionUnit)} moved to ${destination.code}. Its QR code stays the same.`)
       setAction(null); setUnitId(null)
       await onChange()
     } catch (failure) {
@@ -111,11 +112,11 @@ export function InventoryLabels({ shelf, shelves = [], close, onChange, migratio
     finally { setSavingUnit(false) }
   }
   async function deleteShelf() {
-    if (busy || hasStock || migrationRequired) return
-    if (!window.confirm(`Delete shelf "${shelf.name}" (${shelf.code})? It will be archived and removed from active inventory. Transaction history will be kept.`)) return
+    if (busy || hasStock || migrationRequired || permanentDeleteRequired) return
+    if (!window.confirm(`Permanently delete shelf "${shelf.name}" (${shelf.code}) from the database? This cannot be undone. Historical transaction records will remain.`)) return
     setDeleting(true); setDeleteError('')
     try {
-      const { error } = await supabase.rpc('inventory_archive_shelf', { p_id: shelf.id })
+      const { error } = await supabase.rpc('inventory_delete_shelf', { p_id: shelf.id })
       if (error) throw error
       await onChange()
       close()
@@ -138,20 +139,20 @@ export function InventoryLabels({ shelf, shelves = [], close, onChange, migratio
           <label>Return condition<select disabled={busy} value={returnCondition} onChange={event => setReturnCondition(event.target.value)}><option value="good">Good</option><option value="damaged">Damaged</option></select></label>
           {!returnLoans.length && <label className="unit-return-confirmation"><input type="checkbox" required disabled={busy} checked={physicalReturn} onChange={event => setPhysicalReturn(event.target.checked)}/>I confirm this unit is physically back in the laboratory</label>}
         </> : action.type === 'move' ? <><label>Destination shelf<select required disabled={busy} value={destinationId} onChange={event => setDestinationId(event.target.value)}><option value="">Choose a shelf</option>{destinations.map(item => <option key={item.id} value={item.id}>{item.code} · {item.name}</option>)}</select></label>
-          <p>{destinations.length ? 'Only equipment shelves with the same item type are listed. The unit keeps its permanent ID and QR code. Its display number may change on the new shelf.' : `Add another equipment shelf for ${shelf.item_type} in Items before moving this unit.`}</p></> : <p>This removes the unit from active stock and keeps its transaction history.</p>}
+          <p>{destinations.length ? 'Only equipment shelves with the same item type are listed. The unit keeps its permanent ID and QR code. Its display number may change on the new shelf.' : `Add another equipment shelf for ${shelf.item_type} in Items before moving this unit.`}</p></> : <p>This permanently deletes the equipment unit’s database row. This cannot be undone. Historical transaction records will remain.</p>}
         {!(action.type === 'return' && (loadingReturn || returnLoans.length)) && <label>{action.type === 'delete' ? 'Deletion reason' : action.type === 'return' ? 'Return confirmation reason' : 'Move notes (optional)'}<textarea required={action.type !== 'move'} maxLength={1000} disabled={busy} value={reason} onChange={event => setReason(event.target.value)}/></label>}
-        <div className="unit-action-buttons"><button className={action.type === 'delete' ? 'delete-unit-button' : 'primary'} disabled={busy || (action.type === 'move' && !destinations.length)}>{savingUnit ? 'Saving…' : action.type === 'delete' ? 'Confirm delete' : action.type === 'return' ? 'Confirm return' : 'Confirm move'}</button><button type="button" className="secondary" disabled={busy} onClick={() => { setAction(null); setUnitError('') }}>Cancel</button></div>
+        <div className="unit-action-buttons"><button className={action.type === 'delete' ? 'delete-unit-button' : 'primary'} disabled={busy || (action.type === 'move' && !destinations.length) || (action.type === 'delete' && permanentDeleteRequired)}>{savingUnit ? 'Saving…' : action.type === 'delete' ? 'Confirm delete' : action.type === 'return' ? 'Confirm return' : 'Confirm move'}</button><button type="button" className="secondary" disabled={busy} onClick={() => { setAction(null); setUnitError('') }}>Cancel</button></div>
       </form>}
       <div className="equipment-label-list">{units.map(item => <div key={item.id}><span><b>{unitName(item)}</b><small>{item.status.replaceAll('_', ' ')} · {item.condition}</small><code>{item.id}</code>{item.status === 'borrowed' && <small>Return this unit before moving or deleting it.</small>}</span>
-        <div className="unit-action-buttons"><button type="button" className="secondary" disabled={busy} onClick={() => { setUnitId(item.id); setAction(null) }}>View QR</button>{item.status === 'borrowed' && <button type="button" className="secondary" aria-label={`Return ${unitName(item)}`} disabled={busy || migrationRequired} onClick={() => openReturnAction(item)}>Return</button>}<button type="button" className="secondary" aria-label={`Move ${unitName(item)}`} disabled={busy || actionsUnavailable || item.status === 'borrowed'} onClick={() => openUnitAction('move', item)}>Move</button><button type="button" className="delete-unit-button" aria-label={`Delete ${unitName(item)}`} disabled={busy || actionsUnavailable || item.status === 'borrowed'} onClick={() => openUnitAction('delete', item)}>Delete</button></div>
+        <div className="unit-action-buttons"><button type="button" className="secondary" disabled={busy} onClick={() => { setUnitId(item.id); setAction(null) }}>View QR</button>{item.status === 'borrowed' && <button type="button" className="secondary" aria-label={`Return ${unitName(item)}`} disabled={busy || migrationRequired} onClick={() => openReturnAction(item)}>Return</button>}<button type="button" className="secondary" aria-label={`Move ${unitName(item)}`} disabled={busy || actionsUnavailable || item.status === 'borrowed'} onClick={() => openUnitAction('move', item)}>Move</button><button type="button" className="delete-unit-button" aria-label={`Delete ${unitName(item)}`} disabled={busy || actionsUnavailable || permanentDeleteRequired || item.status === 'borrowed'} onClick={() => openUnitAction('delete', item)}>Delete</button></div>
       </div>)}</div>
       {!units.length && <p>This shelf is empty. You can delete it below or receive new stock.</p>}
     </>}
     </div>
     <div className="inventory-qr-actions">
       {deleteError && <div role="alert" className="connection-error">{deleteError}</div>}
-      <p id="delete-shelf-help">{migrationRequired ? 'Complete the database setup to delete shelves.' : hasStock ? consumable ? 'Issue or remove all consumables before deleting this shelf.' : 'Move or delete the remaining units above to empty this shelf. Return borrowed equipment first.' : 'Deleting archives this shelf and keeps its transaction history.'}</p>
-      <button type="button" className="delete-shelf-button" disabled={busy || hasStock || migrationRequired} aria-describedby="delete-shelf-help" onClick={deleteShelf}>{deleting ? 'Deleting…' : 'Delete shelf'}</button>
+      <p id="delete-shelf-help">{migrationRequired ? 'Complete the database setup to delete shelves.' : permanentDeleteRequired ? 'Complete the permanent deletion database update shown on the main page.' : hasStock ? consumable ? 'Issue or remove all consumables before deleting this shelf.' : 'Move or delete the remaining units above to empty this shelf. Return borrowed equipment first.' : 'Permanently deletes this shelf from the database. Historical transaction records remain.'}</p>
+      <button type="button" className="delete-shelf-button" disabled={busy || hasStock || migrationRequired || permanentDeleteRequired} aria-describedby="delete-shelf-help" onClick={deleteShelf}>{deleting ? 'Deleting…' : 'Delete shelf'}</button>
     </div>
   </div></div>
 }
