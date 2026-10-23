@@ -84,7 +84,13 @@ export default function AuthGate() {
       <fieldset className="login-fields" disabled={signingIn}>
         {registering && <label>Full name<input value={fullName} onChange={event => setFullName(event.target.value)} required /></label>}
         <label>Email address<input type="email" autoComplete="username" value={email} onChange={event => setEmail(event.target.value)} required /></label>
-        <label htmlFor="auth-password">Password<span className="password-input"><input id="auth-password" type={showPassword ? 'text' : 'password'} autoComplete={registering ? 'new-password' : 'current-password'} value={password} onChange={event => setPassword(event.target.value)} minLength="6" required /><button type="button" aria-controls="auth-password" aria-label={showPassword ? 'Hide password' : 'Show password'} aria-pressed={showPassword} onClick={() => setShowPassword(visible => !visible)}>{showPassword ? 'Hide' : 'Show'}</button></span></label>
+        <div className="password-field">
+          <label htmlFor="auth-password">Password</label>
+          <div className="password-input">
+            <input id="auth-password" type={showPassword ? 'text' : 'password'} autoComplete={registering ? 'new-password' : 'current-password'} value={password} onChange={event => setPassword(event.target.value)} minLength="6" required />
+            <button type="button" aria-controls="auth-password" aria-label={showPassword ? 'Hide password' : 'Show password'} aria-pressed={showPassword} onClick={() => setShowPassword(visible => !visible)}>{showPassword ? 'Hide' : 'Show'}</button>
+          </div>
+        </div>
         <button className="primary login-button" disabled={!supabase}>{signingIn ? 'Please wait…' : registering ? 'Request operator access' : 'Sign in to VSU InventoScan'}</button>
         <button type="button" className="auth-switch" onClick={() => { setRegistering(!registering); setShowPassword(false); setError('') }}>{registering ? 'Back to sign in' : 'Create an account'}</button>
       </fieldset>

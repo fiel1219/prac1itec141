@@ -1,5 +1,13 @@
-.inventory-qr-backdrop{z-index:25}
-.inventory-qr-modal{max-height:85vh;overflow-y:auto;width:500px}
+.inventory-qr-backdrop{z-index:25;grid-template-columns:minmax(0,1fr)}
+.inventory-qr-modal{max-height:85vh;overflow:hidden;width:min(500px,100%);min-width:0;display:flex;flex-direction:column}
+.inventory-qr-body{overflow-y:auto;min-height:0;padding-top:4px}
+.inventory-qr-actions{flex-shrink:0;margin-top:18px;padding-top:14px;border-top:1px solid #e9ebf2}
+.inventory-qr-actions p{margin:0 0 10px;line-height:1.5}
+.inventory-qr-actions .connection-error{margin:0 0 10px;text-align:left}
+.delete-shelf-button{width:100%;border:1px solid #c63c48;border-radius:7px;background:#fff1f2;color:#a92e3a;padding:10px 15px;font-size:12px;font-weight:600;cursor:pointer}
+.delete-shelf-button:hover:not(:disabled){background:#ffe1e5}
+.delete-shelf-button:focus-visible{outline:2px solid #a92e3a;outline-offset:3px}
+.delete-shelf-button:disabled{opacity:.55;cursor:not-allowed}
 .equipment-label-list{text-align:left;margin-top:18px}
 .equipment-label-list>div{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:14px 0;border-top:1px solid #e9ebf2}
 .equipment-label-list small,.equipment-label-list code{display:block;margin-top:5px;color:#737b91;font-size:11px;overflow-wrap:anywhere}
