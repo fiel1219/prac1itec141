@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import QRCode from 'qrcode'
 import { fetchBorrowers, fetchInventoryByQR, supabase } from './lib/supabase'
 import { activeUnits, availableUnits, itemName, shelfItems } from './lib/inventory'
-import { equipmentQRValue, isConsumableShelf } from './lib/inventoryQR'
+import { equipmentQRValue, isConsumableUnit } from './lib/inventoryQR'
 import './InventoryQR.css'
 
 const unitName = unit => `Unit ${String(unit.unit_number).padStart(3, '0')}`
@@ -28,13 +28,14 @@ function QRLabel({ shelf, unit }) {
   return <><span className="eyebrow">{unit ? 'EQUIPMENT QR CODE' : 'CONSUMABLE SHELF QR CODE'}</span>
     <h2>{unit ? `${itemName(unit, shelf)} · ${unitName(unit)}` : shelf.name}</h2>
     <p>{shelf.code}{unit && ` · Permanent ID: ${unit.id}`}</p>
+    {unit?.description && <p className="item-description">{unit.description}</p>}
     {image ? <img className="qr-image" src={image} alt={unit ? `QR code for equipment ${unit.id}` : `Consumable QR code for shelf ${shelf.code}`}/> : <p>Generating QR…</p>}
     {error && <div role="alert" className="connection-error">{error}</div>}
     <code className="qr-value">{value}</code>
     <button className="primary full" onClick={download} disabled={!image}>Download QR</button></>
 }
 
-export function InventoryLabels({ shelf, shelves = [], close, onChange, migrationRequired = false, unitActionsRequired = false, permanentDeleteRequired = false, itemNamesRequired = false }) {
+export function InventoryLabels({ shelf, shelves = [], close, onChange, migrationRequired = false, unitActionsRequired = false, permanentDeleteRequired = false, itemNamesRequired = false, itemCategoriesRequired = false }) {
   const [unitId, setUnitId] = useState(shelf.qrUnit?.id || null)
   const [deleting, setDeleting] = useState(false), [deleteError, setDeleteError] = useState('')
   const [action, setAction] = useState(null), [destinationId, setDestinationId] = useState(''), [reason, setReason] = useState('')
@@ -46,18 +47,20 @@ export function InventoryLabels({ shelf, shelves = [], close, onChange, migratio
   const [addingItems, setAddingItems] = useState(false), [quantity, setQuantity] = useState(1)
   const [savingStock, setSavingStock] = useState(false), [stockError, setStockError] = useState('')
   const [stockItem, setStockItem] = useState('')
+  const [description, setDescription] = useState('')
+  const [inventoryKind, setInventoryKind] = useState('equipment'), [showShelfQR, setShowShelfQR] = useState(false)
   const body = useRef(null)
-  const consumable = isConsumableShelf(shelf)
   const units = activeUnits(shelf).filter(item => !removedIds.includes(item.id)).map(item => ({ ...item,
     ...(unitOverrides[item.id]?.source === shelf.inventory_units ? unitOverrides[item.id].values : {}) }))
   const unit = units.find(item => item.id === unitId)
   const actionUnit = units.find(item => item.id === action?.id)
-  const destinations = shelves.filter(item => item.id !== shelf.id && item.status === 'active' && !isConsumableShelf(item)
-    && (!itemNamesRequired || item.item_type?.trim().toLowerCase() === shelf.item_type?.trim().toLowerCase()))
+  const equipmentUnits = units.filter(item => !isConsumableUnit(item, shelf))
+  const consumableItems = shelfItems({ ...shelf, inventory_units: units.filter(item => isConsumableUnit(item, shelf)) })
+  const destinations = shelves.filter(item => item.id !== shelf.id && item.status === 'active')
   const hasStock = units.length > 0
   const busy = deleting || savingUnit || loadingReturn || savingStock
-  const actionsUnavailable = migrationRequired || unitActionsRequired
-  const deleteShelfHelp = migrationRequired ? 'Complete the database setup to delete shelves.' : permanentDeleteRequired ? 'Complete the permanent deletion database update shown on the main page.' : hasStock ? consumable ? 'Issue or remove all consumables before deleting this shelf.' : 'Move or delete the remaining units above to empty this shelf. Return borrowed equipment first.' : ''
+  const actionsUnavailable = migrationRequired || unitActionsRequired || itemCategoriesRequired
+  const deleteShelfHelp = migrationRequired ? 'Complete the database setup to delete shelves.' : permanentDeleteRequired ? 'Complete the permanent deletion database update shown on the main page.' : hasStock ? 'Move or delete equipment and issue remaining consumables to empty this shelf. Return borrowed equipment first.' : ''
   function requestClose() { if (!busy) close() }
   function openUnitAction(type, item) {
     setAddingItems(false); setStockError('')
@@ -65,25 +68,27 @@ export function InventoryLabels({ shelf, shelves = [], close, onChange, migratio
     body.current?.scrollTo({ top: 0 })
   }
   function openAddItems() {
-    setStockItem('')
+    setStockItem(''); setDescription(''); setInventoryKind('equipment'); setShowShelfQR(false)
     setAddingItems(true); setQuantity(1); setStockError(''); setSuccess(''); setAction(null); setUnitId(null); setUnitError(''); setDeleteError('')
     body.current?.scrollTo({ top: 0 })
   }
   async function addItems(event) {
     event.preventDefault()
-    if (busy || migrationRequired || itemNamesRequired) return
+    if (busy || migrationRequired || itemNamesRequired || itemCategoriesRequired) return
     const count = Number(quantity)
     setStockError(''); setSuccess('')
     if (!Number.isInteger(count) || count < 1 || count > 1000) { setStockError('Enter a whole-number quantity from 1 to 1000.'); return }
     if (!stockItem.trim()) { setStockError('Enter an item name.'); return }
     setSavingStock(true)
     try {
-      const { error } = await supabase.rpc('inventory_item_stock_move', { p_shelf_id: shelf.id, p_direction: 'in', p_item_name: stockItem.trim(), p_quantity: count, p_notes: '' })
+      const { error } = await supabase.rpc('inventory_receive_categorized_items', { p_shelf_id: shelf.id, p_item_name: stockItem.trim(), p_inventory_kind: inventoryKind, p_quantity: count, p_description: description.trim() })
       if (error) throw error
       setAddingItems(false)
       setSuccess(`${count} ${stockItem.trim()} item(s) added to ${shelf.name}.`)
       await onChange()
-    } catch (failure) { setStockError(failure.message) }
+    } catch (failure) { setStockError(failure.code === 'PGRST202'
+      ? 'Run supabase/inventory_item_categories.sql after the previous migrations, then try again.'
+      : failure.message) }
     finally { setSavingStock(false) }
   }
   async function openReturnAction(item) {
@@ -158,14 +163,17 @@ export function InventoryLabels({ shelf, shelves = [], close, onChange, migratio
     {stockError && <div role="alert" className="connection-error">{stockError}</div>}
     {addingItems && <form className="unit-action-form" aria-label="Add items" onSubmit={addItems}>
       <h3>Add items to {shelf.name}</h3>
-      <label>Item name<input required maxLength={120} autoFocus disabled={busy} list="shelf-item-names" value={stockItem} onChange={event => setStockItem(event.target.value)}/><datalist id="shelf-item-names">{shelfItems(shelf).map(item => <option key={item.name} value={item.name}/>)}</datalist></label>
+      <label>Item name<input required maxLength={120} autoFocus disabled={busy} list="shelf-item-names" value={stockItem} onChange={event => setStockItem(event.target.value)}/><datalist id="shelf-item-names">{shelfItems(shelf).filter(item => item.kind === inventoryKind).map(item => <option key={item.key} value={item.name}/>)}</datalist></label>
+      <label>Inventory category<select aria-label="Inventory category" required disabled={busy} value={inventoryKind} onChange={event => setInventoryKind(event.target.value)}><option value="equipment">Equipment · QR per unit</option><option value="consumable">Consumables · shelf QR</option></select></label>
       <label>Quantity<input type="number" required min="1" max="1000" step="1" disabled={busy} value={quantity} onChange={event => setQuantity(event.target.value)}/></label>
+      <label>Description (optional)<textarea aria-label="Description (optional)" maxLength={1000} disabled={busy} value={description} onChange={event => setDescription(event.target.value)}/></label>
       <div className="unit-action-buttons"><button className="primary" disabled={busy}>{savingStock ? 'Adding…' : 'Confirm add'}</button><button type="button" className="secondary" disabled={busy} onClick={() => { setAddingItems(false); setStockError('') }}>Cancel</button></div>
     </form>}
-    {!addingItems && (consumable || unit ? <>{!consumable && <button className="secondary" onClick={() => setUnitId(null)}>All equipment units</button>}<QRLabel shelf={shelf} unit={consumable ? null : unit}/>
-      {consumable && <div className="shelf-item-summary">{shelfItems(shelf).map(item => <div key={item.name}><b>{item.name}</b><span>{item.available} available · {item.units.length} total</span></div>)}</div>}
+    {!addingItems && (showShelfQR || unit ? <><button className="secondary" onClick={() => { setUnitId(null); setShowShelfQR(false) }}>All items</button><QRLabel shelf={shelf} unit={unit}/>
     </> : <>
-      <h2>{shelf.name} · equipment QR labels</h2>
+      <h2>{shelf.name} · items</h2>
+      {shelf.description && <p className="item-description">{shelf.description}</p>}
+      {consumableItems.length > 0 && <section aria-label="Consumables" className="shelf-item-summary"><h3>Consumables</h3>{consumableItems.map(item => <div key={item.key}><b>{item.name}</b><span>{item.available} available · {item.units.length} total</span></div>)}<button type="button" className="secondary" disabled={busy} onClick={() => { setShowShelfQR(true); setAction(null) }}>View consumable shelf QR</button></section>}
       {actionsUnavailable && <p className="unit-setup-help">Complete the unit management database setup shown on the main page to enable Move and Delete.</p>}
       {actionUnit && <form className="unit-action-form" onSubmit={saveUnitAction}>
         <h3>{action.type === 'move' ? 'Move' : action.type === 'return' ? 'Return' : 'Delete'} {unitName(actionUnit)}</h3>
@@ -175,11 +183,11 @@ export function InventoryLabels({ shelf, shelves = [], close, onChange, migratio
           <label>Return condition<select disabled={busy} value={returnCondition} onChange={event => setReturnCondition(event.target.value)}><option value="good">Good</option><option value="damaged">Damaged</option></select></label>
           {!returnLoans.length && <label className="unit-return-confirmation"><input type="checkbox" required disabled={busy} checked={physicalReturn} onChange={event => setPhysicalReturn(event.target.checked)}/>I confirm this unit is physically back in the laboratory</label>}
         </> : action.type === 'move' ? <><label>Destination shelf<select aria-label="Destination shelf" required disabled={busy} value={destinationId} onChange={event => setDestinationId(event.target.value)}><option value="">Choose a shelf</option>{destinations.map(item => <option key={item.id} value={item.id}>{item.code} · {item.name}</option>)}</select></label>
-          <p>{destinations.length ? 'The unit keeps its item name, permanent ID, and QR code. Its display number may change on the new shelf.' : 'Add another equipment shelf before moving this unit.'}</p></> : <p>This permanently deletes the equipment unit’s database row. This cannot be undone. Historical transaction records will remain.</p>}
+          <p>{destinations.length ? 'The unit keeps its item name, category, permanent ID, and QR code. Its display number may change on the new shelf.' : 'Add another shelf before moving this unit.'}</p></> : <p>This permanently deletes the equipment unit’s database row. This cannot be undone. Historical transaction records will remain.</p>}
         {!(action.type === 'return' && (loadingReturn || returnLoans.length)) && <label>{action.type === 'delete' ? 'Deletion reason' : action.type === 'return' ? 'Return confirmation reason' : 'Move notes (optional)'}<textarea required={action.type !== 'move'} maxLength={1000} disabled={busy} value={reason} onChange={event => setReason(event.target.value)}/></label>}
         <div className="unit-action-buttons"><button className={action.type === 'delete' ? 'delete-unit-button' : 'primary'} disabled={busy || (action.type === 'move' && !destinations.length) || (action.type === 'delete' && permanentDeleteRequired)}>{savingUnit ? 'Saving…' : action.type === 'delete' ? 'Confirm delete' : action.type === 'return' ? 'Confirm return' : 'Confirm move'}</button><button type="button" className="secondary" disabled={busy} onClick={() => { setAction(null); setUnitError('') }}>Cancel</button></div>
       </form>}
-      <div className="equipment-label-list">{units.map(item => <div key={item.id}><span><b>{unitName(item)}</b><small className="equipment-item-name">{itemName(item, shelf)}</small><small>{item.status.replaceAll('_', ' ')} · {item.condition}</small><code>{item.id}</code>{item.status === 'borrowed' && <small>Return this unit before moving or deleting it.</small>}</span>
+      <div className="equipment-label-list">{equipmentUnits.map(item => <div key={item.id}><span><b>{unitName(item)}</b><small className="equipment-item-name">{itemName(item, shelf)}</small>{item.description && <small className="item-description">{item.description}</small>}<small>Equipment · {item.status.replaceAll('_', ' ')} · {item.condition}</small><code>{item.id}</code>{item.status === 'borrowed' && <small>Return this unit before moving or deleting it.</small>}</span>
         <div className="unit-action-buttons"><button type="button" className="secondary" disabled={busy} onClick={() => { setUnitId(item.id); setAction(null) }}>View QR</button>{item.status === 'borrowed' && <button type="button" className="secondary" aria-label={`Return ${unitName(item)}`} disabled={busy || migrationRequired} onClick={() => openReturnAction(item)}>Return</button>}<button type="button" className="secondary" aria-label={`Move ${unitName(item)}`} disabled={busy || actionsUnavailable || item.status === 'borrowed'} onClick={() => openUnitAction('move', item)}>Move</button><button type="button" className="delete-unit-button" aria-label={`Delete ${unitName(item)}`} disabled={busy || actionsUnavailable || permanentDeleteRequired || item.status === 'borrowed'} onClick={() => openUnitAction('delete', item)}>Delete</button></div>
       </div>)}</div>
     </>)}
@@ -188,14 +196,14 @@ export function InventoryLabels({ shelf, shelves = [], close, onChange, migratio
       {deleteError && <div role="alert" className="connection-error">{deleteError}</div>}
       {deleteShelfHelp && <p id="delete-shelf-help">{deleteShelfHelp}</p>}
       <div className="inventory-qr-action-buttons">
-        <button type="button" className="primary" disabled={busy || addingItems || migrationRequired || itemNamesRequired} onClick={openAddItems}>Add items</button>
+        <button type="button" className="primary" disabled={busy || addingItems || migrationRequired || itemNamesRequired || itemCategoriesRequired} onClick={openAddItems}>Add items</button>
         <button type="button" className="delete-shelf-button" disabled={busy || addingItems || hasStock || migrationRequired || permanentDeleteRequired} aria-describedby={deleteShelfHelp ? 'delete-shelf-help' : undefined} onClick={deleteShelf}>{deleting ? 'Deleting…' : 'Delete shelf'}</button>
       </div>
     </div>}
   </div></div>
 }
 
-export function InventoryScanner({ onChange, migrationRequired, itemNamesRequired = false }) {
+export function InventoryScanner({ onChange, migrationRequired, itemNamesRequired = false, itemCategoriesRequired = false }) {
   const [value, setValue] = useState(''), [result, setResult] = useState(null)
   const [error, setError] = useState(''), [done, setDone] = useState('')
   const [busy, setBusy] = useState(false), [loading, setLoading] = useState(false), [scanning, setScanning] = useState(false)
@@ -282,12 +290,12 @@ export function InventoryScanner({ onChange, migrationRequired, itemNamesRequire
     try {
       let success
       if (result.qr_kind === 'consumable') {
-        if (itemNamesRequired) throw new Error('Complete the item database update shown on the main page before issuing supplies.')
+        if (itemNamesRequired || itemCategoriesRequired) throw new Error('Complete the item database update shown on the main page before issuing supplies.')
         if (!issueItem) throw new Error('Choose an item to issue.')
         const count = Number(quantity)
         if (!Number.isInteger(count) || count < 1 || count > Math.min(1000, available)) throw new Error('Enter an available whole-number quantity from 1 to 1000.')
         if (!notes.trim()) throw new Error('Enter the issue reason or recipient.')
-        const { error } = await supabase.rpc('inventory_item_stock_move', { p_shelf_id: result.id, p_direction: 'out', p_item_name: issueItem, p_quantity: count, p_notes: notes.trim() })
+        const { error } = await supabase.rpc('inventory_item_category_stock_move', { p_shelf_id: result.id, p_direction: 'out', p_item_name: issueItem, p_inventory_kind: 'consumable', p_quantity: count, p_notes: notes.trim() })
         if (error) throw error
         success = `${count} ${issueItem} unit(s) issued.`
       } else if (loan) {
@@ -327,13 +335,13 @@ export function InventoryScanner({ onChange, migrationRequired, itemNamesRequire
       {error && <div role="alert" className="connection-error">{error}</div>}
       {done && <div role="status" className="success-message">{done}</div>}
       {result && <div className="inventory-qr-result"><div><span className="eyebrow">{unit ? 'EQUIPMENT FOUND' : 'CONSUMABLE SHELF FOUND'}</span><h2>{unit ? `${itemName(unit, result)} · ${unitName(unit)}` : result.name}</h2><p>{result.code}</p>
-        {unit ? <><code className="qr-value">Permanent ID: {unit.id}</code><p>Status: {unit.status.replaceAll('_', ' ')} · Condition: {unit.condition}</p>{unit.comment && <p>{unit.comment}</p>}</> : <div className="shelf-item-summary">{items.map(item => <div key={item.name}><b>{item.name}</b><span>{item.available} available</span></div>)}</div>}</div>
+        {unit ? <><code className="qr-value">Permanent ID: {unit.id}</code><p>Status: {unit.status.replaceAll('_', ' ')} · Condition: {unit.condition}</p>{unit.description && <p className="item-description">{unit.description}</p>}{unit.comment && <p>{unit.comment}</p>}</> : <div className="shelf-item-summary">{items.map(item => <div key={item.name}><b>{item.name}</b><span>{item.available} available</span></div>)}</div>}</div>
         <form className="checkout-form" onSubmit={transact}>
-          {!unit ? <><h3>Issue consumables</h3><label>Item<select aria-label="Item" required disabled={busy || itemNamesRequired} value={issueItem} onChange={event => { setIssueItem(event.target.value); setQuantity(1) }}><option value="">Choose an item</option>{items.map(item => <option key={item.name} value={item.name} disabled={!item.available}>{item.name} · {item.available} available</option>)}</select></label><label>Quantity<input required type="number" min="1" max={Math.min(1000, available)} step="1" disabled={busy} value={quantity} onChange={event => setQuantity(event.target.value)}/></label><label>Issue reason / recipient<textarea required maxLength={1000} disabled={busy} value={notes} onChange={event => setNotes(event.target.value)}/></label></> : loan ? <><h3>Return this equipment</h3><p>Borrower: {loan.borrowers?.name || 'See transaction history'}</p><label>Return condition<select value={condition} disabled={busy} onChange={event => setCondition(event.target.value)}><option value="good">Good</option><option value="damaged">Damaged</option></select></label></> : available ? <>
+          {!unit ? <><h3>Issue consumables</h3><label>Item<select aria-label="Item" required disabled={busy || itemNamesRequired || itemCategoriesRequired} value={issueItem} onChange={event => { setIssueItem(event.target.value); setQuantity(1) }}><option value="">Choose an item</option>{items.map(item => <option key={item.key} value={item.name} disabled={!item.available}>{item.name} · {item.available} available</option>)}</select></label><label>Quantity<input required type="number" min="1" max={Math.min(1000, available)} step="1" disabled={busy} value={quantity} onChange={event => setQuantity(event.target.value)}/></label><label>Issue reason / recipient<textarea required maxLength={1000} disabled={busy} value={notes} onChange={event => setNotes(event.target.value)}/></label></> : loan ? <><h3>Return this equipment</h3><p>Borrower: {loan.borrowers?.name || 'See transaction history'}</p><label>Return condition<select value={condition} disabled={busy} onChange={event => setCondition(event.target.value)}><option value="good">Good</option><option value="damaged">Damaged</option></select></label></> : available ? <>
             <h3>Borrow this equipment</h3><label>Borrower<select disabled={busy} value={borrowerId} onChange={event => setBorrowerId(event.target.value)}><option value="">Choose a borrower or enter a new one</option>{borrowers.map(item => <option key={item.id} value={item.id}>{item.name} · {item.identity_number}</option>)}</select></label>
             <div className="new-borrower"><label>New borrower name<input disabled={busy} value={borrowerName} onChange={event => { setBorrowerName(event.target.value); setBorrowerId('') }}/></label><label>Student / employee ID<input disabled={busy} value={identity} onChange={event => { setIdentity(event.target.value); setBorrowerId('') }}/></label></div><label>Expected return date<input required type="date" disabled={busy} value={due} onChange={event => setDue(event.target.value)}/></label>
           </> : <p>This unit is unavailable for borrowing. Review its status and condition in Items.</p>}
-          <button className="primary" disabled={busy || (!unit && itemNamesRequired) || (!loan && !available)}>{busy ? 'Saving…' : !unit ? 'Confirm issue' : loan ? 'Confirm return' : 'Confirm checkout'}</button>
+          <button className="primary" disabled={busy || (!unit && (itemNamesRequired || itemCategoriesRequired)) || (!loan && !available)}>{busy ? 'Saving…' : !unit ? 'Confirm issue' : loan ? 'Confirm return' : 'Confirm checkout'}</button>
         </form></div>}
     </>}
   </section>

@@ -48,11 +48,27 @@ test('mixed shelves preserve names through receipts, targeted issues, transfers,
     await db.exec('reset role')
     const migration = await file('inventory_shelf_items.sql')
     await db.exec(migration); await db.exec(migration)
+    const descriptionsMigration = await file('inventory_item_descriptions.sql')
+    await db.exec(descriptionsMigration); await db.exec(descriptionsMigration)
     await signIn()
     assert.deepEqual((await call('select id,item_name,status from public.inventory_units where shelf_id=$1 order by unit_number',[legacy])).rows,
       legacyUnits.map((unit,i) => ({ id:unit.id,item_name:'Microscope',status:i===0?'borrowed':'available' })))
     assert.equal((await call('select checkout_item_name from public.transactions where unit_id=$1',[legacyUnits[0].id])).rows[0].checkout_item_name,'Microscope')
     const mixed = await shelf('PARTS'), supplies = await shelf('SUPPLIES','Consumables','consumable')
+    const described = await shelf('DESCRIBED')
+    const receive = (name,n,description) => call('select public.inventory_receive_items($1,$2,$3,$4)',[described,name,n,description])
+    await receive('Keyboard',2,'  USB keyboard\nBlack, full size  ')
+    let describedRows = (await call('select * from public.inventory_units where shelf_id=$1 order by unit_number',[described])).rows
+    assert.deepEqual(describedRows.map(unit => unit.description),['USB keyboard\nBlack, full size','USB keyboard\nBlack, full size'])
+    assert.ok(describedRows.every(unit => unit.comment===null))
+    await receive('Mouse',1,'')
+    await assert.rejects(receive('Keyboard',1,'x'.repeat(1001)),/description/)
+    await assert.rejects(receive('',1,'Description'),/item name/)
+    await assert.rejects(receive('Keyboard',0,'Description'),/quantity/)
+    describedRows = (await call('select * from public.inventory_units where shelf_id=$1 order by unit_number',[described])).rows
+    assert.equal(describedRows.length,3); assert.equal(describedRows[2].description,'')
+    await call(`select public.inventory_move_unit($1,$2,'Relocate')`,[describedRows[0].id,legacy])
+    assert.equal((await call('select description from public.inventory_units where id=$1',[describedRows[0].id])).rows[0].description,'USB keyboard\nBlack, full size')
     const stock = (id,direction,name,n,notes='Delivery') => call('select public.inventory_item_stock_move($1,$2,$3,$4,$5)',[id,direction,name,n,notes])
     await stock(mixed,'in','Keyboard',2); await stock(mixed,'in','Mouse',3); await stock(mixed,'in',' keyboard ',1)
     const rows = async id => (await call('select * from public.inventory_units where shelf_id=$1 and retired_at is null order by unit_number',[id])).rows
@@ -92,7 +108,9 @@ test('mixed shelves preserve names through receipts, targeted issues, transfers,
     assert.deepEqual(remaining.map(unit => unit.item_name),['Gloves','Gloves','Wipes'])
     await db.exec(`select set_config('test.uid','',false)`)
     await assert.rejects(stock(mixed,'in','Mouse',1),/Sign in/)
+    await assert.rejects(receive('Keyboard',1,'Description'),/Sign in/)
     await db.exec('reset role; set role anon')
     await assert.rejects(stock(mixed,'in','Mouse',1),/permission denied/)
+    await assert.rejects(receive('Keyboard',1,'Description'),/permission denied/)
   } finally { await db.close() }
 })

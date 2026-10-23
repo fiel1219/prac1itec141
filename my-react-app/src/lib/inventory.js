@@ -1,3 +1,5 @@
+import { itemKind } from './inventoryQR.js'
+
 export const activeUnits = shelf => (shelf.inventory_units || []).filter(unit => !unit.retired_at)
 export const availableUnits = shelf => activeUnits(shelf).filter(unit => unit.status === 'available' && unit.condition === 'good')
 export const isLowStock = shelf => availableUnits(shelf).length <= Number(shelf.low_stock_threshold ?? 2)
@@ -5,8 +7,8 @@ export const itemName = (unit, shelf) => unit?.item_name?.trim() || shelf?.item_
 export function shelfItems(shelf) {
   const groups = new Map()
   for (const unit of activeUnits(shelf)) {
-    const name = itemName(unit, shelf), key = name.toLowerCase()
-    if (!groups.has(key)) groups.set(key, { name, units: [] })
+    const name = itemName(unit, shelf), kind = itemKind(unit, shelf), key = `${kind}:${name.toLowerCase()}`
+    if (!groups.has(key)) groups.set(key, { key, name, kind, units: [] })
     groups.get(key).units.push(unit)
   }
   return [...groups.values()].map(group => ({ ...group,
@@ -19,7 +21,7 @@ export function inventorySummary(shelves) {
     return (groups.length ? groups : [{ name: '', units: [] }]).map(group => {
       const units = group.units, subset = { ...shelf, inventory_units: units }
       return {
-        code: shelf.code, name: shelf.name, item_type: group.name,
+        code: shelf.code, name: shelf.name, item_type: group.name, inventory_kind: group.kind || '', category: group.kind === 'consumable' ? 'Consumables' : group.kind === 'equipment' ? 'Equipment' : '',
         total: units.length, available: availableUnits(subset).length,
         borrowed: units.filter(unit => unit.status === 'borrowed').length,
         damaged: units.filter(unit => unit.condition === 'damaged').length,

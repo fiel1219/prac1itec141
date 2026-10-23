@@ -79,3 +79,15 @@ test('blank, unknown, malformed, and failed QR lookups return actionable errors'
   const failure = new Error('Network unavailable')
   assert.equal((await resolveInventoryQR(clientFor({}, failure), 'SHELF')).error, failure)
 })
+
+test('mixed shelf labels expose only consumables and equipment QR follows the item category', async () => {
+  const shelf = { id:'A',qr_value:'MIXED',status:'active',inventory_kind:'consumable' }
+  const equipment = { id:firstId,shelf_id:'A',inventory_kind:'equipment',item_name:'Cable' }
+  const consumable = { id:secondId,shelf_id:'A',inventory_kind:'consumable',item_name:'Cable' }
+  const client = clientFor({ shelves:[shelf],inventory_units:[equipment,consumable] })
+  assert.deepEqual((await resolveInventoryQR(client,'MIXED')).data.inventory_units,[consumable])
+  assert.deepEqual((await resolveInventoryQR(client,equipmentQRValue(equipment))).data.inventory_units,[equipment])
+  assert.match((await resolveInventoryQR(client,equipmentQRValue(consumable))).error.message,/Scan its shelf QR/)
+  shelf.inventory_kind='equipment'
+  assert.deepEqual((await resolveInventoryQR(client,'MIXED')).data.inventory_units,[consumable])
+})

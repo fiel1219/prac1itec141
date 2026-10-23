@@ -56,3 +56,17 @@ export async function inventoryItemNamesRequired(client) {
   if (['42703', '42P01', 'PGRST204', 'PGRST205'].includes(error.code)) return { required: true, error: null }
   return { required: false, error }
 }
+
+export async function inventoryItemCategoriesRequired(client) {
+  const checks = await Promise.all([
+    client.from('inventory_units').select('inventory_kind').limit(0),
+    client.from('shelves').select('description').limit(0),
+  ])
+  let required = false
+  for (const { error } of checks) {
+    if (!error) continue
+    if (['42703', '42P01', 'PGRST204', 'PGRST205'].includes(error.code)) required = true
+    else return { required: false, error }
+  }
+  return { required, error: null }
+}

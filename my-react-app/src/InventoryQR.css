@@ -32,6 +32,7 @@
 .return-status-warning p{margin:0 0 10px}.return-status-warning .unit-action-buttons{justify-content:flex-start}
 .inventory-qr-modal .unit-setup-help{color:#a92e3a}
 .equipment-label-list .equipment-item-name{color:#303548;font-weight:600}
+.item-description{white-space:pre-wrap;overflow-wrap:anywhere}
 .shelf-item-summary{margin-top:16px;text-align:left}
 .shelf-item-summary>div{display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px;padding:10px 0;border-top:1px solid #e9ebf2;font-size:12px}
 .shelf-item-summary span{color:#737b91}
