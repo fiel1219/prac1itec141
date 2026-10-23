@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { supabase } from './lib/supabase'
-import { activeUnits, stockQuantity, availableQuantity, recordQuantity, itemLabel, itemName, shelfItems, inventorySummary, downloadCsv } from './lib/inventory'
+import { activeUnits, recordQuantity, itemLabel, itemName, shelfItems, inventorySummary, downloadCsv } from './lib/inventory'
 import { isConsumableUnit } from './lib/inventoryQR'
 import './InventoryFeatures.css'
 
@@ -56,37 +56,65 @@ export function AddShelfDialog({ onClose, onSaved, laboratoryId }) {
   </div></div>
 }
 
-export function ItemManagement({ shelves, onChange, onQR, onUnitQR, permanentDeleteRequired = false, laboratoryId }) {
-  const [editing, setEditing] = useState(null), [form, setForm] = useState(emptyShelf)
-  const [selectedId, setSelectedId] = useState(''), [query, setQuery] = useState('')
-  const [unit, setUnit] = useState(null), [error, setError] = useState(''), [success, setSuccess] = useState(''), [busy, setBusy] = useState(false)
-  const selected = shelves.find(shelf => shelf.id === selectedId)
-  async function run(action, message) {
-    setBusy(true); setError(''); setSuccess('')
-    try {
-      const { error: failure } = await action()
-      if (failure) throw failure
-      setSuccess(message); setEditing(null); setUnit(null); await onChange()
-    } catch (failure) { setError(failure.message) } finally { setBusy(false) }
+export function ItemManagement({ shelves, onChange, onQR, onUnitQR }) {
+  const [query,setQuery] = useState('')
+  const [unit,setUnit] = useState(null), [editing,setEditing] = useState(null)
+  const [error,setError] = useState(''), [success,setSuccess] = useState(''), [busy,setBusy] = useState(false)
+  const editForm = useRef(null)
+  const search = query.trim().toLowerCase()
+  const allEquipment = shelves.flatMap(shelf => activeUnits(shelf).filter(item => !isConsumableUnit(item,shelf)).map(item => ({ shelf,item })))
+    .sort((a,b) => itemName(a.item,a.shelf).localeCompare(itemName(b.item,b.shelf)) || a.item.unit_number-b.item.unit_number || a.item.id.localeCompare(b.item.id))
+  const allConsumables = shelves.flatMap(shelf => shelfItems(shelf).filter(item => item.kind === 'consumable').map(item => ({ shelf,item })))
+    .sort((a,b) => a.item.name.localeCompare(b.item.name) || a.shelf.id.localeCompare(b.shelf.id))
+  const matches = values => values.some(value => String(value || '').toLowerCase().includes(search))
+  const equipment = allEquipment.filter(({shelf,item}) => matches([itemLabel(item,shelf),itemName(item,shelf),item.description]))
+  const consumables = allConsumables.filter(({shelf,item}) => matches([itemLabel(item.units[0],shelf),item.name,...item.units.map(stock => stock.description)]))
+  const editingShelf = shelves.find(shelf => shelf.id === editing?.shelfId)
+  const editingGroup = editing?.groupKey && editingShelf ? shelfItems(editingShelf).find(item => item.key === editing.groupKey) : null
+  function edit(shelf,item,groupKey) {
+    if (busy || item.status === 'borrowed') return
+    setEditing({ shelfId:shelf.id,groupKey });setUnit({ ...item });setError('');setSuccess('')
+    requestAnimationFrame(() => editForm.current?.scrollIntoView({ block:'nearest' }))
   }
-  function edit(shelf) { setForm(shelf || emptyShelf); setEditing(shelf?.id || 'new'); setError(''); setSuccess('') }
-  function save(event) {
+  async function save(event) {
     event.preventDefault()
-    run(() => saveShelf(editing === 'new' ? null : editing, form, laboratoryId), 'Shelf saved. Open its QR labels and choose Add items to receive stock.')
+    if (busy || !unit) return
+    setBusy(true);setError('');setSuccess('')
+    try {
+      const { error:failure } = await supabase.rpc('inventory_update_unit',{ p_id:unit.id,p_status:unit.status,p_condition:unit.condition,p_comment:unit.comment || '' })
+      if (failure) throw failure
+      setUnit(null);setEditing(null);setSuccess('Item updated.')
+      await onChange()
+    } catch (failure) {
+      setError(failure.code === '23505' ? 'This consumable already has stock with that status and condition. Choose a different combination.' : failure.message)
+    } finally { setBusy(false) }
   }
-  function removeShelf(shelf) {
-    if (busy || permanentDeleteRequired || stockQuantity(shelf) > 0) return
-    if (!window.confirm(`Permanently delete shelf "${shelf.name}" (${shelf.code}) from the database? This cannot be undone. Historical transaction records will remain.`)) return
-    run(() => supabase.rpc('inventory_delete_shelf', { p_id: shelf.id }), 'Shelf permanently deleted from the database.')
-  }
-  return <section className="card page inventory-feature"><div className="cardhead"><div><h2>Items and shelves</h2><p>Choose equipment or consumables, manage stock, and generate the correct QR labels.</p></div><button className="primary" onClick={() => edit(null)} disabled={busy}>Add shelf</button></div>
+  return <section className="card page inventory-feature item-management">
+    <div className="cardhead"><div><h2>Items</h2><p>{allEquipment.length} equipment · {allConsumables.length} consumable items</p></div></div>
     <Message error={error} success={success}/>
-    <label className="inventory-search">Search shelves<input value={query} onChange={event => setQuery(event.target.value)} placeholder="Name, code, or item type"/></label>
-    {editing && <ShelfForm form={form} setForm={setForm} onSubmit={save} onCancel={() => setEditing(null)} busy={busy} title={editing === 'new' ? 'Add shelf' : 'Edit shelf'}/>}
-    <div className="inventory-table"><table><thead><tr><th>Shelf</th><th>Items</th><th>Total</th><th>Available</th><th>Threshold</th><th>Actions</th></tr></thead><tbody>{shelves.filter(shelf => `${shelf.code} ${shelf.name} ${shelfItems(shelf).map(item => item.name).join(' ')}`.toLowerCase().includes(query.toLowerCase())).map(shelf => <tr key={shelf.id}><td><b>{shelf.name}</b><br/>{shelf.code}</td><td>{shelfItems(shelf).map(item => item.name).join(', ') || 'No items'}<br/><small>{shelfItems(shelf).map(item => item.kind === 'consumable' ? 'Consumables' : 'Equipment').filter((kind,index,all) => all.indexOf(kind) === index).join(' · ')}</small></td><td>{stockQuantity(shelf)}</td><td><span className="badge">{availableQuantity(shelf)}</span></td><td>{shelf.low_stock_threshold ?? 2}</td><td><div className="inventory-buttons"><button className="secondary" disabled={busy} onClick={() => edit(shelf)}>Edit</button><button className="secondary" onClick={() => setSelectedId(shelf.id)}>Items</button><button className="secondary" onClick={() => onQR(shelf)}>View items / QR</button><button className="secondary" disabled={busy || permanentDeleteRequired || stockQuantity(shelf) > 0} onClick={() => removeShelf(shelf)} title={permanentDeleteRequired ? 'Complete the permanent deletion database update' : 'Move or delete all units first'}>Delete shelf</button></div></td></tr>)}</tbody></table></div>
-    {!shelves.length && <p className="empty">Add a shelf to start managing inventory.</p>}
-    {selected && <div className="inventory-units"><h3>{selected.name} · unit management</h3><p>Use Stock Movements to receive or remove stock. Borrowed units must be returned before editing. Equipment uses a QR per unit. Consumables use the shelf QR.</p><div className="inventory-table"><table><thead><tr><th>Reference</th><th>Item</th><th>Category</th><th>Description</th><th>Quantity</th><th>Status</th><th>Condition</th><th>Comment</th><th>Action</th></tr></thead><tbody>{activeUnits(selected).map(item => <tr key={item.id}><td>{itemLabel(item, selected)}</td><td>{itemName(item, selected)}</td><td>{isConsumableUnit(item, selected) ? 'Consumables' : 'Equipment'}</td><td className="item-description">{item.description || '—'}</td><td>{recordQuantity(item, selected)}</td><td>{item.status.replaceAll('_',' ')}</td><td>{item.condition}</td><td>{item.comment || '—'}</td><td><button className="secondary" disabled={busy || item.status === 'borrowed'} onClick={() => setUnit({ ...item })}>Edit item</button>{!isConsumableUnit(item, selected) && <button className="secondary" onClick={() => onUnitQR(selected, item)}>Equipment QR</button>}</td></tr>)}</tbody></table></div></div>}
-    {unit && <form className="inventory-form" onSubmit={event => { event.preventDefault(); run(() => supabase.rpc('inventory_update_unit', { p_id: unit.id, p_status: unit.status, p_condition: unit.condition, p_comment: unit.comment || '' }), 'Unit updated.') }}><h3>Edit {itemLabel(unit,selected)}</h3><label>Status<select value={unit.status} onChange={event => setUnit({ ...unit, status: event.target.value })}>{['available','under_maintenance','missing','not_found'].map(status => <option key={status} value={status}>{status.replaceAll('_',' ')}</option>)}</select></label><label>Condition<select value={unit.condition} onChange={event => setUnit({ ...unit, condition: event.target.value })}><option value="good">Good</option><option value="damaged">Damaged</option></select></label><label>Comment<textarea maxLength={1000} value={unit.comment || ''} onChange={event => setUnit({ ...unit, comment: event.target.value })}/></label><div className="inventory-buttons"><button className="primary" disabled={busy}>Save unit</button><button type="button" className="secondary" disabled={busy} onClick={() => setUnit(null)}>Cancel</button></div></form>}
+    <label className="inventory-search">Search items<input aria-label="Search items" value={query} onChange={event => setQuery(event.target.value)} placeholder="Name, reference, or description"/></label>
+    {unit && editingShelf && <form ref={editForm} className="inventory-form" aria-label="Edit item" onSubmit={save}>
+      <h3>Edit {itemLabel(unit,editingShelf)} · {itemName(unit,editingShelf)}</h3>
+      {editingGroup?.units.length>1 && <label>Stock record<select aria-label="Stock record" disabled={busy} value={unit.id} onChange={event => setUnit({ ...editingGroup.units.find(item => item.id === event.target.value) })}>{editingGroup.units.map(item => <option key={item.id} value={item.id} disabled={item.status === 'borrowed'}>{recordQuantity(item,editingShelf)} · {item.status.replaceAll('_',' ')} · {item.condition}</option>)}</select></label>}
+      <label>Status<select aria-label="Status" disabled={busy} value={unit.status} onChange={event => setUnit({ ...unit,status:event.target.value })}>{['available','under_maintenance','missing','not_found'].map(status => <option key={status} value={status}>{status.replaceAll('_',' ')}</option>)}</select></label>
+      <label>Condition<select aria-label="Condition" disabled={busy} value={unit.condition} onChange={event => setUnit({ ...unit,condition:event.target.value })}><option value="good">Good</option><option value="damaged">Damaged</option></select></label>
+      <label>Comment<textarea aria-label="Comment" maxLength={1000} disabled={busy} value={unit.comment || ''} onChange={event => setUnit({ ...unit,comment:event.target.value })}/></label>
+      <div className="inventory-buttons"><button className="primary" disabled={busy}>{busy ? 'Saving…' : 'Save item'}</button><button type="button" className="secondary" disabled={busy} onClick={() => { setUnit(null);setEditing(null);setError('') }}>Cancel</button></div>
+    </form>}
+    <section className="item-list-section" aria-label="Equipment"><h3>Equipment <span>{equipment.length}</span></h3>
+      {!!equipment.length && <div className="inventory-table"><table><thead><tr><th>Reference</th><th>Item name</th><th>Description</th><th>Status</th><th>Condition</th><th>Actions</th></tr></thead><tbody>{equipment.map(({shelf,item}) => <tr key={item.id}>
+        <td>{itemLabel(item,shelf)}</td><td><b>{itemName(item,shelf)}</b></td><td className="item-description">{item.description || '—'}</td><td>{item.status.replaceAll('_',' ')}</td><td>{item.condition}</td>
+        <td><div className="inventory-buttons"><button type="button" className="secondary" disabled={busy || item.status === 'borrowed'} title={item.status === 'borrowed' ? 'Return this equipment before editing it' : undefined} onClick={() => edit(shelf,item)}>Edit item</button><button type="button" className="secondary" disabled={busy} onClick={() => onUnitQR(shelf,item)}>View QR</button></div></td>
+      </tr>)}</tbody></table></div>}
+      {!equipment.length && <p className="item-list-empty">{search ? 'No equipment matches your search.' : 'No equipment yet.'}</p>}
+    </section>
+    <section className="item-list-section" aria-label="Consumables"><h3>Consumables <span>{consumables.length}</span></h3>
+      {!!consumables.length && <div className="inventory-table"><table><thead><tr><th>Reference</th><th>Item name</th><th>Description</th><th>Quantity</th><th>Available</th><th>Actions</th></tr></thead><tbody>{consumables.map(({shelf,item}) => <tr key={shelf.id+':'+item.key}>
+        <td>{itemLabel(item.units[0],shelf)}</td><td><b>{item.name}</b></td><td className="item-description">{[...new Set(item.units.map(stock => stock.description).filter(Boolean))].join('\n') || '—'}</td><td>{item.quantity}</td><td>{item.available}</td>
+        <td><div className="inventory-buttons"><button type="button" className="secondary" disabled={busy || item.units.every(stock => stock.status === 'borrowed')} onClick={() => edit(shelf,item.units.find(stock => stock.status !== 'borrowed'),item.key)}>Edit item</button><button type="button" className="secondary" disabled={busy} onClick={() => onQR({ ...shelf,qrConsumables:true })}>View QR</button></div></td>
+      </tr>)}</tbody></table></div>}
+      {!consumables.length && <p className="item-list-empty">{search ? 'No consumables match your search.' : 'No consumables yet.'}</p>}
+    </section>
   </section>
 }
 

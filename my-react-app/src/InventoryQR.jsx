@@ -50,7 +50,7 @@ export function InventoryLabels({ shelf, shelves = [], close, onChange, migratio
   const [savingStock, setSavingStock] = useState(false), [stockError, setStockError] = useState('')
   const [stockItem, setStockItem] = useState('')
   const [description, setDescription] = useState('')
-  const [inventoryKind, setInventoryKind] = useState('equipment'), [showShelfQR, setShowShelfQR] = useState(false)
+  const [inventoryKind, setInventoryKind] = useState('equipment'), [showShelfQR, setShowShelfQR] = useState(Boolean(shelf.qrConsumables))
   const body = useRef(null)
   const units = activeUnits(shelf).filter(item => !removedIds.includes(item.id)).map(item => ({ ...item,
     ...(unitOverrides[item.id]?.source === shelf.inventory_units ? unitOverrides[item.id].values : {}) }))
