@@ -15,11 +15,10 @@ on conflict (code) do nothing;
 insert into public.inventory_units (shelf_id, unit_number, status, condition, comment)
 select s.id, numbers.unit_number,
   case
-    when s.code = 'A-01' and numbers.unit_number in (3, 4) then 'borrowed'::public.unit_status
-    when s.code = 'A-02' and numbers.unit_number in (11, 12, 13) then 'borrowed'::public.unit_status
-    when s.code = 'B-01' and numbers.unit_number = 2 then 'borrowed'::public.unit_status
+    when s.code = 'A-01' and numbers.unit_number = 3 then 'borrowed'::public.unit_status
+    when s.code = 'A-02' and numbers.unit_number = 11 then 'borrowed'::public.unit_status
     when s.code = 'B-01' and numbers.unit_number = 8 then 'under_maintenance'::public.unit_status
-    when s.code = 'C-01' and numbers.unit_number in (5, 6) then 'borrowed'::public.unit_status
+    when s.code = 'C-01' and numbers.unit_number = 5 then 'borrowed'::public.unit_status
     else 'available'::public.unit_status
   end,
   case when s.code = 'B-01' and numbers.unit_number = 8

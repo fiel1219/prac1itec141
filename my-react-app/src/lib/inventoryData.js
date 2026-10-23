@@ -12,6 +12,20 @@ export async function loadInventoryUnits(client, shelfId) {
   return { data: units, error: null }
 }
 
+export async function loadTransactions(client, activeOnly = false) {
+  const rows = []
+  for (let offset = 0; ; offset += 500) {
+    let request = client.from('transactions').select('*, borrowers(name, identity_number), inventory_units(unit_number, shelf_id, shelves(code, name, item_type))')
+      .order('borrowed_at', { ascending: false }).order('id').range(offset, offset + 499)
+    if (activeOnly) request = request.is('returned_at', null)
+    const { data, error } = await request
+    if (error) return { data: null, error }
+    rows.push(...data)
+    if (data.length < 500) break
+  }
+  return { data: rows, error: null }
+}
+
 export async function inventoryMigrationRequired(client) {
   const checks = await Promise.all([
     client.from('shelves').select('low_stock_threshold').limit(0),

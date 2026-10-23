@@ -23,6 +23,10 @@
 .unit-action-form select,.unit-action-form textarea{display:block;width:100%;margin-top:6px;padding:10px;border:1px solid #dce1eb;border-radius:6px;font:inherit;background:#fff}
 .unit-action-form textarea{min-height:74px;resize:vertical}
 .unit-action-form .unit-action-buttons{justify-content:flex-start}
+.unit-action-form .unit-return-confirmation{display:flex;align-items:flex-start;gap:8px;line-height:1.5}
+.unit-action-form .unit-return-confirmation input{width:auto;margin:2px 0 0;flex-shrink:0}
+.return-status-warning{margin:16px 0;padding:14px;border:1px solid #ead8a9;border-radius:7px;background:#fffaf0;color:#72591d;font-size:12px;line-height:1.5}
+.return-status-warning p{margin:0 0 10px}.return-status-warning .unit-action-buttons{justify-content:flex-start}
 .inventory-qr-modal .unit-setup-help{color:#a92e3a}
 @media(max-width:480px){.equipment-label-list>div{display:block}.equipment-label-list .unit-action-buttons{max-width:none;justify-content:flex-start;margin-top:12px}}
 .inventory-scanner>.connection-error,.inventory-scanner>.success-message{margin-top:18px}

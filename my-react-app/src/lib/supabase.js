@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
-import { loadInventoryUnits, inventoryMigrationRequired } from './inventoryData'
+import { loadInventoryUnits, loadTransactions, inventoryMigrationRequired } from './inventoryData'
 import { resolveInventoryQR } from './inventoryQR'
 
 const url = import.meta.env.VITE_SUPABASE_URL
@@ -39,9 +39,9 @@ export async function fetchInventoryByQR(code) {
   return resolveInventoryQR(supabase, code)
 }
 
-export async function fetchTransactions() {
+export async function fetchTransactions(activeOnly = false) {
   if (!supabase) return { data: null, error: new Error('Supabase is not configured') }
-  return supabase.from('transactions').select('*, borrowers(name, identity_number), inventory_units(unit_number, shelf_id, shelves(code, name, item_type))').order('borrowed_at', { ascending: false })
+  return loadTransactions(supabase, activeOnly)
 }
 
 export async function fetchAdmins() {

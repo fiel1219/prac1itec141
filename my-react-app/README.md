@@ -6,6 +6,8 @@ QR-based laboratory inventory built with React, Vite, and Supabase.
 
 Open your project's Supabase SQL Editor and run **supabase/inventoscan_features.sql**, then **supabase/inventory_qr.sql**, then **supabase/inventory_unit_actions.sql**. These migrations enable inventory transactions, the equipment/consumable QR setup, and per-unit Move/Delete actions. They are safe to rerun and preserve existing shelves, unit IDs, shelf QR values, and borrowing history. These files have not been applied to your live database by this code change. If the first two migrations are already installed, only the third is needed for the new unit actions.
 
+For the return-status correction flow, also run **supabase/inventory_return_repair.sql** after those migrations. It updates the return function and adds a way to confirm a physical return when a unit has a stale borrowed status and no active loan. Installing it does not automatically release any borrowed equipment or rewrite historical loans.
+
 For a fresh database, first run schema.sql, configure your existing user_accounts/account_approvals tables and approved sign-in account, then run borrowing_permissions.sql, inventoscan_features.sql, inventory_qr.sql, and inventory_unit_actions.sql in that order. Do not run both alternate user-table scripts; retain the account setup you already use. Seed scripts are optional demo data.
 
 Configure .env.local (never commit it):
@@ -52,11 +54,15 @@ Old equipment shelf labels no longer open borrowing transactions. The scanner as
 
 Open a shelf's equipment popup from Shelves or Items. Every unit has **View QR**, **Move**, and **Delete** buttons. Borrowed units must be returned before moving or deleting them.
 
+Borrowed units also have a **Return** button. It checks for open loan records before displaying a form. With an active loan, it records the normal return. With no active loan, staff must confirm that the equipment is physically back, choose its condition, and enter a reason. The database refuses status correction while a loan is still open. Confirmed corrections log the operator and reason in movement history without inventing a borrower or loan.
+
 - **Move:** choose another active equipment shelf with the same item type. Notes are optional. The permanent UUID, QR code, condition, and loan history stay with the unit. Its shelf display number can change to avoid collisions. Source and destination movements record the transfer, and subsequent receipts do not reuse numbers vacated by transfers.
 - **Delete:** enter a reason and confirm. This retires the selected unit and preserves its database record and transaction history. Damaged or maintenance units can also be retired once no loan is open.
 - **Delete shelf:** becomes available immediately when the popup has no remaining active units. Confirming archives the shelf and retains history.
 
 Successful actions update the open popup and inventory counts. Database validation also rejects stale actions, such as a unit another user has already borrowed or removed. A missing unit-actions migration disables only Move/Delete; it does not disable existing inventory operations or deletion of empty shelves.
+
+The old sample data incorrectly marked some units as borrowed without creating loans, and marked one completed return as still borrowed. Fresh `seed.sql` data fixes those flags. For previously loaded sample data, use the popup's Return confirmation after checking physical presence. Do not clear borrowed statuses in bulk. Returns loads active loans directly and paginates its queries so older open loans remain visible even when history exceeds the API row limit.
 
 ## Verification
 

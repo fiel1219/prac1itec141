@@ -40,30 +40,61 @@ export function InventoryLabels({ shelf, shelves = [], close, onChange, migratio
   const [action, setAction] = useState(null), [destinationId, setDestinationId] = useState(''), [reason, setReason] = useState('')
   const [savingUnit, setSavingUnit] = useState(false), [unitError, setUnitError] = useState(''), [success, setSuccess] = useState('')
   const [removedIds, setRemovedIds] = useState([])
+  const [unitOverrides, setUnitOverrides] = useState({})
+  const [returnLoans, setReturnLoans] = useState([]), [returnLoanId, setReturnLoanId] = useState('')
+  const [returnCondition, setReturnCondition] = useState('good'), [physicalReturn, setPhysicalReturn] = useState(false), [loadingReturn, setLoadingReturn] = useState(false)
   const body = useRef(null)
   const consumable = isConsumableShelf(shelf)
-  const units = activeUnits(shelf).filter(item => !removedIds.includes(item.id))
+  const units = activeUnits(shelf).filter(item => !removedIds.includes(item.id)).map(item => ({ ...item,
+    ...(unitOverrides[item.id]?.source === shelf.inventory_units ? unitOverrides[item.id].values : {}) }))
   const unit = units.find(item => item.id === unitId)
   const actionUnit = units.find(item => item.id === action?.id)
   const destinations = shelves.filter(item => item.id !== shelf.id && item.status === 'active' && !isConsumableShelf(item)
     && item.item_type.trim().toLowerCase() === shelf.item_type.trim().toLowerCase())
   const hasStock = units.length > 0
-  const busy = deleting || savingUnit
+  const busy = deleting || savingUnit || loadingReturn
   const actionsUnavailable = migrationRequired || unitActionsRequired
   function requestClose() { if (!busy) close() }
   function openUnitAction(type, item) {
     setAction({ type, id: item.id }); setDestinationId(''); setReason(''); setUnitError(''); setSuccess(''); setUnitId(null)
     body.current?.scrollTo({ top: 0 })
   }
+  async function openReturnAction(item) {
+    openUnitAction('return', item)
+    setReturnLoans([]); setReturnLoanId(''); setReturnCondition('good'); setPhysicalReturn(false); setLoadingReturn(true)
+    try {
+      const { data, error } = await supabase.from('transactions').select('id,reference,expected_return_at').eq('unit_id', item.id).is('returned_at', null).order('borrowed_at')
+      if (error) throw error
+      setReturnLoans(data || []); setReturnLoanId(data?.length === 1 ? data[0].id : '')
+    } catch (failure) { setUnitError(failure.message); setAction(null) }
+    finally { setLoadingReturn(false) }
+  }
   async function saveUnitAction(event) {
     event.preventDefault()
-    if (busy || actionsUnavailable || !actionUnit || actionUnit.status === 'borrowed') return
+    if (busy || !actionUnit || migrationRequired || (action.type !== 'return' && (actionsUnavailable || actionUnit.status === 'borrowed'))) return
     setUnitError(''); setSuccess('')
     if (action.type === 'delete' && !reason.trim()) { setUnitError('Enter a reason for deleting this unit.'); return }
     const destination = destinations.find(item => item.id === destinationId)
     if (action.type === 'move' && !destination) { setUnitError('Choose a compatible destination shelf.'); return }
+    if (action.type === 'return' && !returnLoans.length && (!physicalReturn || !reason.trim())) { setUnitError('Confirm the equipment is physically back and enter a reason.'); return }
+    if (action.type === 'return' && returnLoans.length && !returnLoans.some(loan => loan.id === returnLoanId)) { setUnitError('Choose the loan being returned.'); return }
     setSavingUnit(true)
     try {
+      if (action.type === 'return') {
+        const { error } = returnLoans.length
+          ? await supabase.rpc('inventory_return', { p_transaction_id: returnLoanId, p_condition: returnCondition })
+          : await supabase.rpc('inventory_reconcile_return', { p_unit_id: actionUnit.id, p_condition: returnCondition, p_reason: reason.trim() })
+        if (error) throw error
+        const updated = await supabase.from('inventory_units').select('status,condition').eq('id', actionUnit.id).single()
+        if (updated.error) {
+          setAction(null); await onChange()
+          throw new Error('The return was saved, but the refreshed unit could not be loaded. Refresh the shelf before trying another action.')
+        }
+        setUnitOverrides(previous => ({ ...previous, [actionUnit.id]: { source: shelf.inventory_units, values: updated.data } }))
+        setSuccess(updated.data.status === 'borrowed' ? 'Return recorded. This unit still has another active loan.' : `${unitName(actionUnit)} returned. ${updated.data.status === 'available' ? 'It is available to move or delete.' : 'Damaged equipment is under maintenance.'}`)
+        setAction(null); setUnitId(null); await onChange()
+        return
+      }
       const { error } = action.type === 'delete'
         ? await supabase.rpc('inventory_delete_unit', { p_unit_id: actionUnit.id, p_reason: reason.trim() })
         : await supabase.rpc('inventory_move_unit', { p_unit_id: actionUnit.id, p_destination_shelf_id: destination.id, p_notes: reason.trim() })
@@ -72,7 +103,11 @@ export function InventoryLabels({ shelf, shelves = [], close, onChange, migratio
       setSuccess(action.type === 'delete' ? `${unitName(actionUnit)} deleted. Its history is kept.` : `${unitName(actionUnit)} moved to ${destination.code}. Its QR code stays the same.`)
       setAction(null); setUnitId(null)
       await onChange()
-    } catch (failure) { setUnitError(failure.message) }
+    } catch (failure) {
+      setUnitError(failure.code === 'PGRST202' && action.type === 'return'
+        ? 'Return status repair needs database setup. Run supabase/inventory_return_repair.sql in Supabase SQL Editor, then try again.'
+        : failure.message)
+    }
     finally { setSavingUnit(false) }
   }
   async function deleteShelf() {
@@ -96,14 +131,19 @@ export function InventoryLabels({ shelf, shelves = [], close, onChange, migratio
       <h2>{shelf.name} · equipment QR labels</h2><p>View QR labels or manage equipment here. Return borrowed equipment before moving or deleting it.</p>
       {actionsUnavailable && <p className="unit-setup-help">Complete the unit management database setup shown on the main page to enable Move and Delete.</p>}
       {actionUnit && <form className="unit-action-form" onSubmit={saveUnitAction}>
-        <h3>{action.type === 'move' ? 'Move' : 'Delete'} {unitName(actionUnit)}</h3>
-        {action.type === 'move' ? <><label>Destination shelf<select required disabled={busy} value={destinationId} onChange={event => setDestinationId(event.target.value)}><option value="">Choose a shelf</option>{destinations.map(item => <option key={item.id} value={item.id}>{item.code} · {item.name}</option>)}</select></label>
+        <h3>{action.type === 'move' ? 'Move' : action.type === 'return' ? 'Return' : 'Delete'} {unitName(actionUnit)}</h3>
+        {action.type === 'return' ? loadingReturn ? <p role="status">Checking active loans…</p> : <>
+          {returnLoans.length ? <label>Active loan<select required disabled={busy} value={returnLoanId} onChange={event => setReturnLoanId(event.target.value)}><option value="">Choose a loan</option>{returnLoans.map(loan => <option key={loan.id} value={loan.id}>{loan.reference} · due {loan.expected_return_at}</option>)}</select></label>
+            : <p>This unit is marked borrowed, but has no active loan record. Confirm its physical return to correct its status. Existing transaction history will stay unchanged.</p>}
+          <label>Return condition<select disabled={busy} value={returnCondition} onChange={event => setReturnCondition(event.target.value)}><option value="good">Good</option><option value="damaged">Damaged</option></select></label>
+          {!returnLoans.length && <label className="unit-return-confirmation"><input type="checkbox" required disabled={busy} checked={physicalReturn} onChange={event => setPhysicalReturn(event.target.checked)}/>I confirm this unit is physically back in the laboratory</label>}
+        </> : action.type === 'move' ? <><label>Destination shelf<select required disabled={busy} value={destinationId} onChange={event => setDestinationId(event.target.value)}><option value="">Choose a shelf</option>{destinations.map(item => <option key={item.id} value={item.id}>{item.code} · {item.name}</option>)}</select></label>
           <p>{destinations.length ? 'Only equipment shelves with the same item type are listed. The unit keeps its permanent ID and QR code. Its display number may change on the new shelf.' : `Add another equipment shelf for ${shelf.item_type} in Items before moving this unit.`}</p></> : <p>This removes the unit from active stock and keeps its transaction history.</p>}
-        <label>{action.type === 'delete' ? 'Deletion reason' : 'Move notes (optional)'}<textarea required={action.type === 'delete'} maxLength={1000} disabled={busy} value={reason} onChange={event => setReason(event.target.value)}/></label>
-        <div className="unit-action-buttons"><button className={action.type === 'delete' ? 'delete-unit-button' : 'primary'} disabled={busy || (action.type === 'move' && !destinations.length)}>{savingUnit ? 'Saving…' : action.type === 'delete' ? 'Confirm delete' : 'Confirm move'}</button><button type="button" className="secondary" disabled={busy} onClick={() => { setAction(null); setUnitError('') }}>Cancel</button></div>
+        {!(action.type === 'return' && (loadingReturn || returnLoans.length)) && <label>{action.type === 'delete' ? 'Deletion reason' : action.type === 'return' ? 'Return confirmation reason' : 'Move notes (optional)'}<textarea required={action.type !== 'move'} maxLength={1000} disabled={busy} value={reason} onChange={event => setReason(event.target.value)}/></label>}
+        <div className="unit-action-buttons"><button className={action.type === 'delete' ? 'delete-unit-button' : 'primary'} disabled={busy || (action.type === 'move' && !destinations.length)}>{savingUnit ? 'Saving…' : action.type === 'delete' ? 'Confirm delete' : action.type === 'return' ? 'Confirm return' : 'Confirm move'}</button><button type="button" className="secondary" disabled={busy} onClick={() => { setAction(null); setUnitError('') }}>Cancel</button></div>
       </form>}
       <div className="equipment-label-list">{units.map(item => <div key={item.id}><span><b>{unitName(item)}</b><small>{item.status.replaceAll('_', ' ')} · {item.condition}</small><code>{item.id}</code>{item.status === 'borrowed' && <small>Return this unit before moving or deleting it.</small>}</span>
-        <div className="unit-action-buttons"><button type="button" className="secondary" disabled={busy} onClick={() => { setUnitId(item.id); setAction(null) }}>View QR</button><button type="button" className="secondary" aria-label={`Move ${unitName(item)}`} disabled={busy || actionsUnavailable || item.status === 'borrowed'} onClick={() => openUnitAction('move', item)}>Move</button><button type="button" className="delete-unit-button" aria-label={`Delete ${unitName(item)}`} disabled={busy || actionsUnavailable || item.status === 'borrowed'} onClick={() => openUnitAction('delete', item)}>Delete</button></div>
+        <div className="unit-action-buttons"><button type="button" className="secondary" disabled={busy} onClick={() => { setUnitId(item.id); setAction(null) }}>View QR</button>{item.status === 'borrowed' && <button type="button" className="secondary" aria-label={`Return ${unitName(item)}`} disabled={busy || migrationRequired} onClick={() => openReturnAction(item)}>Return</button>}<button type="button" className="secondary" aria-label={`Move ${unitName(item)}`} disabled={busy || actionsUnavailable || item.status === 'borrowed'} onClick={() => openUnitAction('move', item)}>Move</button><button type="button" className="delete-unit-button" aria-label={`Delete ${unitName(item)}`} disabled={busy || actionsUnavailable || item.status === 'borrowed'} onClick={() => openUnitAction('delete', item)}>Delete</button></div>
       </div>)}</div>
       {!units.length && <p>This shelf is empty. You can delete it below or receive new stock.</p>}
     </>}
@@ -153,7 +193,7 @@ export function InventoryScanner({ onChange, migrationRequired }) {
           const response = await supabase.from('transactions').select('id,borrowers(name)').eq('unit_id', unit.id).is('returned_at', null).maybeSingle()
           if (version !== lookupVersion.current) return
           if (response.error) throw response.error
-          if (!response.data) throw new Error('No active loan was found for this borrowed unit. Review its transaction history.')
+          if (!response.data) throw new Error('This unit is marked borrowed but has no active loan. Open its shelf and use Return to confirm its physical return and correct the status.')
           setLoan(response.data)
         } else if (availableUnits(data).length) {
           const response = await fetchBorrowers()
