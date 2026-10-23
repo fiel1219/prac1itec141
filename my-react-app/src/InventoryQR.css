@@ -4,6 +4,9 @@
 .inventory-qr-actions{flex-shrink:0;margin-top:18px;padding-top:14px;border-top:1px solid #e9ebf2}
 .inventory-qr-actions p{margin:0 0 10px;line-height:1.5}
 .inventory-qr-actions .connection-error{margin:0 0 10px;text-align:left}
+.inventory-qr-action-buttons{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.inventory-qr-action-buttons button{min-width:0}
+.inventory-qr-action-buttons button:disabled{opacity:.55;cursor:not-allowed}
 .delete-shelf-button{width:100%;border:1px solid #c63c48;border-radius:7px;background:#fff1f2;color:#a92e3a;padding:10px 15px;font-size:12px;font-weight:600;cursor:pointer}
 .delete-shelf-button:hover:not(:disabled){background:#ffe1e5}
 .delete-shelf-button:focus-visible{outline:2px solid #a92e3a;outline-offset:3px}
