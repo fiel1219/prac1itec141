@@ -4,9 +4,9 @@ QR-based laboratory inventory built with React, Vite, and Supabase.
 
 ## Enable the new features on your existing database
 
-Open your project's Supabase SQL Editor and run **supabase/inventoscan_features.sql**, then **supabase/inventory_qr.sql**. These migrations enable inventory transactions and the equipment/consumable QR setup. Both are safe to rerun and preserve existing shelves, unit IDs, shelf QR values, and borrowing history. These files have not been applied to your live database by this code change.
+Open your project's Supabase SQL Editor and run **supabase/inventoscan_features.sql**, then **supabase/inventory_qr.sql**, then **supabase/inventory_unit_actions.sql**. These migrations enable inventory transactions, the equipment/consumable QR setup, and per-unit Move/Delete actions. They are safe to rerun and preserve existing shelves, unit IDs, shelf QR values, and borrowing history. These files have not been applied to your live database by this code change. If the first two migrations are already installed, only the third is needed for the new unit actions.
 
-For a fresh database, first run schema.sql, configure your existing user_accounts/account_approvals tables and approved sign-in account, then run borrowing_permissions.sql, inventoscan_features.sql, and inventory_qr.sql in that order. Do not run both alternate user-table scripts; retain the account setup you already use. Seed scripts are optional demo data.
+For a fresh database, first run schema.sql, configure your existing user_accounts/account_approvals tables and approved sign-in account, then run borrowing_permissions.sql, inventoscan_features.sql, inventory_qr.sql, and inventory_unit_actions.sql in that order. Do not run both alternate user-table scripts; retain the account setup you already use. Seed scripts are optional demo data.
 
 Configure .env.local (never commit it):
 
@@ -47,6 +47,16 @@ After applying `inventory_qr.sql`, existing shelves default to **Equipment**. Un
 - **Consumables:** choose **Shelf QR** to download the shelf label. Existing shelf QR values remain unchanged when shelf details are edited. Scanning shows the supply type and available quantity. Issue supplies through the scan result or Stock Movements.
 
 Old equipment shelf labels no longer open borrowing transactions. The scanner asks staff to use the QR on the individual equipment unit instead. Camera scanning requires a browser supporting BarcodeDetector, camera permission, and HTTPS or localhost; manual entry remains available.
+
+### Manage equipment inside the shelf popup
+
+Open a shelf's equipment popup from Shelves or Items. Every unit has **View QR**, **Move**, and **Delete** buttons. Borrowed units must be returned before moving or deleting them.
+
+- **Move:** choose another active equipment shelf with the same item type. Notes are optional. The permanent UUID, QR code, condition, and loan history stay with the unit. Its shelf display number can change to avoid collisions. Source and destination movements record the transfer, and subsequent receipts do not reuse numbers vacated by transfers.
+- **Delete:** enter a reason and confirm. This retires the selected unit and preserves its database record and transaction history. Damaged or maintenance units can also be retired once no loan is open.
+- **Delete shelf:** becomes available immediately when the popup has no remaining active units. Confirming archives the shelf and retains history.
+
+Successful actions update the open popup and inventory counts. Database validation also rejects stale actions, such as a unit another user has already borrowed or removed. A missing unit-actions migration disables only Move/Delete; it does not disable existing inventory operations or deletion of empty shelves.
 
 ## Verification
 

@@ -25,5 +25,9 @@ export async function inventoryMigrationRequired(client) {
     if (['42703', '42P01', 'PGRST204', 'PGRST205'].includes(error.code)) required = true
     else return { required: false, error }
   }
-  return { required, error: null }
+  const { error: unitActionsError } = await client.from('shelves').select('next_unit_number').limit(0)
+  if (unitActionsError && !['42703', '42P01', 'PGRST204', 'PGRST205'].includes(unitActionsError.code)) {
+    return { required, error: unitActionsError }
+  }
+  return { required, unitActionsRequired: Boolean(unitActionsError), error: null }
 }
