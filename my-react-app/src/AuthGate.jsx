@@ -14,6 +14,7 @@ export default function AuthGate() {
   const [loading, setLoading] = useState(Boolean(supabase))
   const [signingIn, setSigningIn] = useState(false)
   const [registering, setRegistering] = useState(false)
+  const [showPassword, setShowPassword] = useState(false)
   const [email, setEmail] = useState(''), [password, setPassword] = useState(''), [fullName, setFullName] = useState('')
 
   useEffect(() => {
@@ -68,7 +69,7 @@ export default function AuthGate() {
       const { error: approvalError } = await supabase.from('account_approvals').insert({ full_name: fullName, email, status: 'pending' })
       if (data.session) await supabase.auth.signOut()
       if (approvalError) throw approvalError
-      setRegistering(false); setPassword(''); setError('Account created. An administrator must approve it before you can sign in.')
+      setRegistering(false); setPassword(''); setShowPassword(false); setError('Account created. An administrator must approve it before you can sign in.')
     } catch (failure) { setError(failure.message) } finally { setSigningIn(false) }
   }
 
@@ -83,14 +84,14 @@ export default function AuthGate() {
       <fieldset className="login-fields" disabled={signingIn}>
         {registering && <label>Full name<input value={fullName} onChange={event => setFullName(event.target.value)} required /></label>}
         <label>Email address<input type="email" autoComplete="username" value={email} onChange={event => setEmail(event.target.value)} required /></label>
-        <label>Password<input type="password" autoComplete={registering ? 'new-password' : 'current-password'} value={password} onChange={event => setPassword(event.target.value)} minLength="6" required /></label>
+        <label htmlFor="auth-password">Password<span className="password-input"><input id="auth-password" type={showPassword ? 'text' : 'password'} autoComplete={registering ? 'new-password' : 'current-password'} value={password} onChange={event => setPassword(event.target.value)} minLength="6" required /><button type="button" aria-controls="auth-password" aria-label={showPassword ? 'Hide password' : 'Show password'} aria-pressed={showPassword} onClick={() => setShowPassword(visible => !visible)}>{showPassword ? 'Hide' : 'Show'}</button></span></label>
         <button className="primary login-button" disabled={!supabase}>{signingIn ? 'Please wait…' : registering ? 'Request operator access' : 'Sign in to VSU InventoScan'}</button>
-        <button type="button" className="auth-switch" onClick={() => { setRegistering(!registering); setError('') }}>{registering ? 'Back to sign in' : 'Create an account'}</button>
+        <button type="button" className="auth-switch" onClick={() => { setRegistering(!registering); setShowPassword(false); setError('') }}>{registering ? 'Back to sign in' : 'Create an account'}</button>
       </fieldset>
     </form>
     {!registering && <section className="demo-login" aria-label="Demo accounts">
       <h3>Try a demo account</h3><p>Choose a role to sign in automatically.</p>
-      <div className="demo-login-options">{demoAccounts.map(account => <button type="button" key={account.role} className="demo-login-button" disabled={signingIn || !supabase} onClick={() => { setEmail(account.email); setPassword(account.password); signIn({ email: account.email, password: account.password }, true) }}>
+      <div className="demo-login-options">{demoAccounts.map(account => <button type="button" key={account.role} className="demo-login-button" disabled={signingIn || !supabase} onClick={() => { setEmail(account.email); setPassword(account.password); setShowPassword(false); signIn({ email: account.email, password: account.password }, true) }}>
         <span className="demo-role">{account.role}</span><span className="demo-email">{account.email}</span><span className="demo-action">Open {account.role.toLowerCase()} demo →</span>
       </button>)}</div>
     </section>}
