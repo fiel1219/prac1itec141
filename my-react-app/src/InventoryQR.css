@@ -31,6 +31,10 @@
 .return-status-warning{margin:16px 0;padding:14px;border:1px solid #ead8a9;border-radius:7px;background:#fffaf0;color:#72591d;font-size:12px;line-height:1.5}
 .return-status-warning p{margin:0 0 10px}.return-status-warning .unit-action-buttons{justify-content:flex-start}
 .inventory-qr-modal .unit-setup-help{color:#a92e3a}
+.equipment-label-list .equipment-item-name{color:#303548;font-weight:600}
+.shelf-item-summary{margin-top:16px;text-align:left}
+.shelf-item-summary>div{display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px;padding:10px 0;border-top:1px solid #e9ebf2;font-size:12px}
+.shelf-item-summary span{color:#737b91}
 @media(max-width:480px){.equipment-label-list>div{display:block}.equipment-label-list .unit-action-buttons{max-width:none;justify-content:flex-start;margin-top:12px}}
 .inventory-scanner>.connection-error,.inventory-scanner>.success-message{margin-top:18px}
 .inventory-qr-result{display:grid;grid-template-columns:minmax(0,1fr) minmax(280px,1fr);gap:28px;margin-top:28px;padding-top:24px;border-top:1px solid #e9ebf2}
