@@ -14,6 +14,49 @@ export function LowStockAlerts({ shelves }) {
 }
 
 const emptyShelf = { code: '', name: '', item_type: '', inventory_kind: 'equipment', low_stock_threshold: 2 }
+
+function saveShelf(id, form) {
+  return supabase.rpc('inventory_save_qr_shelf', { p_id: id, p_code: form.code, p_name: form.name, p_item_type: form.item_type,
+    p_threshold: Number(form.low_stock_threshold), p_inventory_kind: form.inventory_kind || 'equipment' })
+}
+
+function ShelfForm({ form, setForm, onSubmit, onCancel, busy, title }) {
+  return <form className="inventory-form" onSubmit={onSubmit} aria-label={title || 'Add shelf'}>
+    {title && <h3>{title}</h3>}
+    {[['code','Shelf code'],['name','Shelf name'],['item_type','Item / product type']].map(([key,label]) => <label key={key}>{label}<input required maxLength={120} disabled={busy} autoFocus={key === 'code'} value={form[key]} onChange={event => setForm({ ...form, [key]: event.target.value })}/></label>)}
+    <label>Inventory category<select aria-label="Inventory category" required disabled={busy} value={form.inventory_kind || 'equipment'} onChange={event => setForm({ ...form, inventory_kind: event.target.value })}><option value="equipment">Equipment · QR per unit</option><option value="consumable">Consumables · QR per shelf</option></select></label>
+    <label>Low-stock threshold<input type="number" min="0" max="1000000" step="1" required disabled={busy} value={form.low_stock_threshold} onChange={event => setForm({ ...form, low_stock_threshold: event.target.value })}/></label>
+    <div className="inventory-buttons"><button className="primary" disabled={busy}>{busy ? 'Saving…' : 'Save shelf'}</button><button type="button" className="secondary" disabled={busy} onClick={onCancel}>Cancel</button></div>
+  </form>
+}
+
+export function AddShelfDialog({ onClose, onSaved }) {
+  const [form, setForm] = useState(emptyShelf), [busy, setBusy] = useState(false), [error, setError] = useState('')
+  useEffect(() => {
+    const escape = event => { if (event.key === 'Escape' && !busy) onClose() }
+    document.addEventListener('keydown', escape)
+    return () => document.removeEventListener('keydown', escape)
+  }, [busy,onClose])
+  function close() { if (!busy) onClose() }
+  async function save(event) {
+    event.preventDefault()
+    if (busy) return
+    setBusy(true); setError('')
+    try {
+      const { data, error: failure } = await saveShelf(null, form)
+      if (failure) throw failure
+      await onSaved(data)
+    } catch (failure) { setError(failure.message) }
+    finally { setBusy(false) }
+  }
+  return <div className="backdrop shelf-form-backdrop" onClick={close}><div className="modal inventory-feature shelf-form-modal" role="dialog" aria-modal="true" aria-labelledby="add-shelf-title" onClick={event => event.stopPropagation()}>
+    <button className="x" type="button" onClick={close} disabled={busy} aria-label="Close add shelf">×</button>
+    <h2 id="add-shelf-title">Add shelf</h2>
+    <Message error={error}/>
+    <ShelfForm form={form} setForm={setForm} onSubmit={save} onCancel={close} busy={busy}/>
+  </div></div>
+}
+
 export function ItemManagement({ shelves, onChange, onQR, onUnitQR, permanentDeleteRequired = false }) {
   const [editing, setEditing] = useState(null), [form, setForm] = useState(emptyShelf)
   const [selectedId, setSelectedId] = useState(''), [query, setQuery] = useState('')
@@ -30,7 +73,7 @@ export function ItemManagement({ shelves, onChange, onQR, onUnitQR, permanentDel
   function edit(shelf) { setForm(shelf || emptyShelf); setEditing(shelf?.id || 'new'); setError(''); setSuccess('') }
   function save(event) {
     event.preventDefault()
-    run(() => supabase.rpc('inventory_save_qr_shelf', { p_id: editing === 'new' ? null : editing, p_code: form.code, p_name: form.name, p_item_type: form.item_type, p_threshold: Number(form.low_stock_threshold), p_inventory_kind: form.inventory_kind || 'equipment' }), 'Shelf saved. Receive stock from the Stock Movements page.')
+    run(() => saveShelf(editing === 'new' ? null : editing, form), 'Shelf saved. Receive stock from the Stock Movements page.')
   }
   function removeShelf(shelf) {
     if (busy || permanentDeleteRequired || activeUnits(shelf).length > 0) return
@@ -40,7 +83,7 @@ export function ItemManagement({ shelves, onChange, onQR, onUnitQR, permanentDel
   return <section className="card page inventory-feature"><div className="cardhead"><div><h2>Items and shelves</h2><p>Choose equipment or consumables, manage stock, and generate the correct QR labels.</p></div><button className="primary" onClick={() => edit(null)} disabled={busy}>Add shelf</button></div>
     <Message error={error} success={success}/>
     <label className="inventory-search">Search shelves<input value={query} onChange={event => setQuery(event.target.value)} placeholder="Name, code, or item type"/></label>
-    {editing && <form className="inventory-form" onSubmit={save}><h3>{editing === 'new' ? 'Add shelf' : 'Edit shelf'}</h3>{[['code','Shelf code'],['name','Shelf name'],['item_type','Item / product type']].map(([key,label]) => <label key={key}>{label}<input required maxLength={120} value={form[key]} onChange={event => setForm({ ...form, [key]: event.target.value })}/></label>)}<label>Inventory category<select required value={form.inventory_kind || 'equipment'} onChange={event => setForm({ ...form, inventory_kind: event.target.value })}><option value="equipment">Equipment · QR per unit</option><option value="consumable">Consumables · QR per shelf</option></select></label><label>Low-stock threshold<input type="number" min="0" max="1000000" step="1" required value={form.low_stock_threshold} onChange={event => setForm({ ...form, low_stock_threshold: event.target.value })}/></label><div className="inventory-buttons"><button className="primary" disabled={busy}>Save shelf</button><button type="button" className="secondary" disabled={busy} onClick={() => setEditing(null)}>Cancel</button></div></form>}
+    {editing && <ShelfForm form={form} setForm={setForm} onSubmit={save} onCancel={() => setEditing(null)} busy={busy} title={editing === 'new' ? 'Add shelf' : 'Edit shelf'}/>}
     <div className="inventory-table"><table><thead><tr><th>Shelf</th><th>Item type</th><th>Total</th><th>Available</th><th>Threshold</th><th>Actions</th></tr></thead><tbody>{shelves.filter(shelf => `${shelf.code} ${shelf.name} ${shelf.item_type}`.toLowerCase().includes(query.toLowerCase())).map(shelf => <tr key={shelf.id}><td><b>{shelf.name}</b><br/>{shelf.code}</td><td>{shelf.item_type}<br/><small>{isConsumableShelf(shelf) ? 'Consumables · shelf QR' : 'Equipment · unit QR'}</small></td><td>{activeUnits(shelf).length}</td><td><span className={'badge ' + (isLowStock(shelf) ? 'bad' : '')}>{availableUnits(shelf).length}</span></td><td>{shelf.low_stock_threshold ?? 2}</td><td><div className="inventory-buttons"><button className="secondary" disabled={busy} onClick={() => edit(shelf)}>Edit</button><button className="secondary" onClick={() => setSelectedId(shelf.id)}>Units</button><button className="secondary" onClick={() => onQR(shelf)}>{isConsumableShelf(shelf) ? 'Shelf QR' : 'Equipment QRs'}</button><button className="secondary" disabled={busy || permanentDeleteRequired || activeUnits(shelf).length > 0} onClick={() => removeShelf(shelf)} title={permanentDeleteRequired ? 'Complete the permanent deletion database update' : 'Move or delete all units first'}>Delete shelf</button></div></td></tr>)}</tbody></table></div>
     {!shelves.length && <p className="empty">Add a shelf to start managing inventory.</p>}
     {selected && <div className="inventory-units"><h3>{selected.name} · unit management</h3><p>Use Stock Movements to receive or remove stock. Borrowed units must be returned before editing. {isConsumableShelf(selected) ? 'Consumables use one QR on the shelf.' : 'Each equipment unit has its own QR label.'}</p><div className="inventory-table"><table><thead><tr><th>Unit</th><th>Status</th><th>Condition</th><th>Comment</th><th>Action</th></tr></thead><tbody>{activeUnits(selected).map(item => <tr key={item.id}><td>{item.unit_number}</td><td>{item.status.replaceAll('_',' ')}</td><td>{item.condition}</td><td>{item.comment || '—'}</td><td><button className="secondary" disabled={busy || item.status === 'borrowed'} onClick={() => setUnit({ ...item })}>Edit unit</button>{!isConsumableShelf(selected) && <button className="secondary" onClick={() => onUnitQR(selected, item)}>Unit QR</button>}</td></tr>)}</tbody></table></div></div>}

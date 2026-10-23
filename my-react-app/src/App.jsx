@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import './App.css'
 import { fetchShelves, fetchBorrowers, fetchTransactions, fetchUsers, fetchApprovals, isSupabaseConfigured, supabase } from './lib/supabase'
 import { InventoryLabels, InventoryScanner } from './InventoryQR'
-import { ItemManagement, StockMovements, Reports, LowStockAlerts } from './InventoryFeatures'
+import { AddShelfDialog, ItemManagement, StockMovements, Reports, LowStockAlerts } from './InventoryFeatures'
 import { activeUnits, availableUnits as getAvailableUnits } from './lib/inventory'
 
 const nav = ['Dashboard','Scan QR','Shelves','Items','Stock Movements','Borrowers','Returns','Transaction History','Inventory Checks','Reports']
@@ -19,6 +19,7 @@ export default function App() {
   const [currentUser,setCurrentUser] = useState(null)
   const [userMenu,setUserMenu] = useState(false)
   const [selectedShelf,setSelectedShelf] = useState(null)
+  const [addingShelf,setAddingShelf] = useState(false)
   const [migrationRequired,setMigrationRequired] = useState(false)
   const [unitActionsRequired,setUnitActionsRequired] = useState(true)
   const [permanentDeleteRequired,setPermanentDeleteRequired] = useState(true)
@@ -53,7 +54,15 @@ export default function App() {
     {page==='Stock Movements' && !migrationRequired && <StockMovements shelves={dbShelves} onChange={refreshInventory}/>}
     {page==='Reports' && !loading && !error && !migrationRequired && <Reports shelves={dbShelves}/>}
     {page==='Scan QR' && <InventoryScanner onChange={refreshInventory} migrationRequired={migrationRequired}/>}
-    {(page==='Dashboard'||page==='Shelves'||page==='Inventory') && <section className="card page"><div className="cardhead"><div><h2>{page==='Dashboard'?'Shelves from Supabase':page}</h2><p>{loading?'Loading database records…':shelves.length+' shelf records loaded from Supabase'}</p></div><Badge tone={error?'bad':''}>{loading?'Loading':error?'Error':'Connected'}</Badge></div>{page!=='Dashboard'&&<div className="search">⌕ <input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Search shelves..."/></div>}{!loading&&!error&&!shelves.length&&<div className="empty">No shelves found. Run seed.sql in Supabase, then refresh.</div>}<div className="shelves">{shelves.map(s=><article className="shelf" key={s.id} onClick={()=>setSelectedShelf(s)}><div><i>▥</i><Badge>{getAvailableUnits(s).length} available</Badge></div><h2>{s.name}</h2><p>{s.code} · {s.item_type}</p><hr/><small><b>{activeUnits(s).length}</b> total units <span>{activeUnits(s).filter(u=>u.status==='borrowed').length} borrowed</span></small></article>)}</div></section>}
+    {(page==='Dashboard'||page==='Shelves'||page==='Inventory') && <section className="card page">
+      <div className="cardhead"><div><h2>{page==='Dashboard'?'Shelves from Supabase':page}</h2><p>{loading?'Loading database records…':shelves.length+' shelf records loaded from Supabase'}</p></div>
+        <div className="shelf-page-actions"><button type="button" className="primary shelf-add-button" disabled={loading || Boolean(error) || migrationRequired} onClick={()=>setAddingShelf(true)}>Add shelf</button><Badge tone={error?'bad':''}>{loading?'Loading':error?'Error':'Connected'}</Badge></div>
+      </div>
+      {page!=='Dashboard' && <div className="search">⌕ <input aria-label="Search shelves" value={query} onChange={event=>setQuery(event.target.value)} placeholder="Search shelves..."/></div>}
+      {!loading && !error && !shelves.length && <div className="empty shelf-empty-state">{dbShelves.length ? <><p>No shelves match your search.</p><button type="button" className="secondary" onClick={()=>setQuery('')}>Clear search</button></> : <><p>No shelves yet. Add your first shelf to start managing inventory.</p><button type="button" className="primary" disabled={migrationRequired} onClick={()=>setAddingShelf(true)}>Add your first shelf</button></>}</div>}
+      <div className="shelves">{shelves.map(s=><article className="shelf" key={s.id} onClick={()=>setSelectedShelf(s)}><div><i>▥</i><Badge>{getAvailableUnits(s).length} available</Badge></div><h2>{s.name}</h2><p>{s.code} · {s.item_type}</p><hr/><small><b>{activeUnits(s).length}</b> total units <span>{activeUnits(s).filter(u=>u.status==='borrowed').length} borrowed</span></small></article>)}</div>
+    </section>}
+    {addingShelf && <AddShelfDialog onClose={()=>setAddingShelf(false)} onSaved={async()=>{ setQuery(''); await refreshInventory(); setAddingShelf(false) }}/>}
     {selectedShelf && <InventoryLabels key={selectedShelf.id + (selectedShelf.qrUnit?.id || '')} shelf={{ ...(dbShelves.find(shelf => shelf.id === selectedShelf.id) || selectedShelf), qrUnit: selectedShelf.qrUnit }} shelves={dbShelves} close={()=>setSelectedShelf(null)} onChange={refreshInventory} migrationRequired={migrationRequired} unitActionsRequired={unitActionsRequired} permanentDeleteRequired={permanentDeleteRequired} />}
     {!['Dashboard','Scan QR','Shelves','Inventory','Items','Stock Movements','Reports'].includes(page)&&<DatabaseTable key={page} page={page} onChange={refreshInventory} migrationRequired={migrationRequired} shelves={dbShelves} onOpenShelf={setSelectedShelf}/>}
     </main></div>
