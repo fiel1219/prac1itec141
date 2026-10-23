@@ -39,6 +39,7 @@ export function InventoryLabels({ shelf, shelves = [], close, onChange, migratio
   const [unitId, setUnitId] = useState(shelf.qrUnit?.id || null)
   const [deleting, setDeleting] = useState(false), [deleteError, setDeleteError] = useState('')
   const [action, setAction] = useState(null), [destinationId, setDestinationId] = useState(''), [reason, setReason] = useState('')
+  const [consumableAction, setConsumableAction] = useState(null)
   const [savingUnit, setSavingUnit] = useState(false), [unitError, setUnitError] = useState(''), [success, setSuccess] = useState('')
   const [removedIds, setRemovedIds] = useState([])
   const [unitOverrides, setUnitOverrides] = useState({})
@@ -56,21 +57,53 @@ export function InventoryLabels({ shelf, shelves = [], close, onChange, migratio
   const actionUnit = units.find(item => item.id === action?.id)
   const equipmentUnits = units.filter(item => !isConsumableUnit(item, shelf))
   const consumableItems = shelfItems({ ...shelf, inventory_units: units.filter(item => isConsumableUnit(item, shelf)) })
+  const actionConsumable = consumableItems.find(item => item.key === consumableAction?.key)
   const destinations = shelves.filter(item => item.id !== shelf.id && item.status === 'active')
   const hasStock = stockQuantity({ ...shelf,inventory_units:units }) > 0
   const busy = deleting || savingUnit || loadingReturn || savingStock
   const actionsUnavailable = migrationRequired || unitActionsRequired || itemCategoriesRequired
-  const deleteShelfHelp = migrationRequired ? 'Complete the database setup to delete shelves.' : permanentDeleteRequired ? 'Complete the permanent deletion database update shown on the main page.' : hasStock ? 'Move or delete equipment and issue remaining consumables to empty this shelf. Return borrowed equipment first.' : ''
+  const deleteShelfHelp = migrationRequired ? 'Complete the database setup to delete shelves.' : permanentDeleteRequired ? 'Complete the permanent deletion database update shown on the main page.' : hasStock ? 'Move or delete the remaining items to empty this shelf. Return borrowed equipment first.' : ''
   function requestClose() { if (!busy) close() }
   function openUnitAction(type, item) {
-    setAddingItems(false); setStockError('')
+    setAddingItems(false); setStockError(''); setConsumableAction(null)
     setAction({ type, id: item.id }); setDestinationId(''); setReason(''); setUnitError(''); setSuccess(''); setUnitId(null)
     body.current?.scrollTo({ top: 0 })
   }
   function openAddItems() {
-    setStockItem(''); setDescription(''); setInventoryKind('equipment'); setShowShelfQR(false)
+    setStockItem(''); setDescription(''); setInventoryKind('equipment'); setShowShelfQR(false); setConsumableAction(null)
     setAddingItems(true); setQuantity(1); setStockError(''); setSuccess(''); setAction(null); setUnitId(null); setUnitError(''); setDeleteError('')
     body.current?.scrollTo({ top: 0 })
+  }
+  function openConsumableAction(type, item) {
+    setConsumableAction({ type, key:item.key }); setAction(null); setUnitId(null); setShowShelfQR(false)
+    setDestinationId(''); setReason(''); setUnitError(''); setSuccess(''); setStockError('')
+    body.current?.scrollTo({ top:0 })
+  }
+  async function saveConsumableAction(event) {
+    event.preventDefault()
+    if (busy || !actionConsumable || actionsUnavailable || (consumableAction.type === 'delete' && permanentDeleteRequired)) return
+    setUnitError(''); setSuccess('')
+    const destination = destinations.find(item => item.id === destinationId)
+    if (consumableAction.type === 'move' && !destination) { setUnitError('Choose a destination shelf.'); return }
+    if (consumableAction.type === 'delete' && !reason.trim()) { setUnitError('Enter a deletion reason.'); return }
+    setSavingUnit(true)
+    try {
+      const common = { p_shelf_id:shelf.id, p_item_name:actionConsumable.name, p_expected_quantity:actionConsumable.quantity }
+      const { error } = consumableAction.type === 'move'
+        ? await supabase.rpc('inventory_move_consumable', { ...common, p_destination_shelf_id:destination.id, p_notes:reason.trim() })
+        : await supabase.rpc('inventory_delete_consumable', { ...common, p_reason:reason.trim() })
+      if (error) throw error
+      setRemovedIds(previous => [...previous,...actionConsumable.units.map(item => item.id)])
+      setSuccess(consumableAction.type === 'move'
+        ? `${actionConsumable.name} moved to ${destination.code} (quantity ${actionConsumable.quantity}).`
+        : `${actionConsumable.name} permanently deleted from the database (quantity ${actionConsumable.quantity}).`)
+      setConsumableAction(null)
+      await onChange()
+    } catch (failure) {
+      setUnitError(failure.code === 'PGRST202'
+        ? 'Run supabase/inventory_consumable_actions.sql after inventory_consumable_quantities.sql, then try again.'
+        : failure.message)
+    } finally { setSavingUnit(false) }
   }
   async function addItems(event) {
     event.preventDefault()
@@ -174,6 +207,16 @@ export function InventoryLabels({ shelf, shelves = [], close, onChange, migratio
       <h2>{shelf.name} · items</h2>
       {shelf.description && <p className="item-description">{shelf.description}</p>}
       {actionsUnavailable && <p className="unit-setup-help">Complete the unit management database setup shown on the main page to enable Move and Delete.</p>}
+      {actionConsumable && <form className="unit-action-form" aria-label={`${consumableAction.type === 'move' ? 'Move' : 'Delete'} consumable`} onSubmit={saveConsumableAction}>
+        <h3>{consumableAction.type === 'move' ? 'Move' : 'Delete'} {itemLabel(actionConsumable.units[0],shelf)} · {actionConsumable.name}</h3>
+        {consumableAction.type === 'move' ? <>
+          <p>Move this item and its full quantity of {actionConsumable.quantity}. Matching consumable stock at the destination will be combined.</p>
+          <label>Destination shelf<select aria-label="Destination shelf" required disabled={busy} value={destinationId} onChange={event => setDestinationId(event.target.value)}><option value="">Choose a shelf</option>{destinations.map(item => <option key={item.id} value={item.id}>{item.code} · {item.name}</option>)}</select></label>
+          {!destinations.length && <p>Add another shelf before moving this item.</p>}
+        </> : <p>Permanently delete this consumable and its remaining quantity of {actionConsumable.quantity} from the database. This cannot be undone. Historical movement records remain.</p>}
+        <label>{consumableAction.type === 'delete' ? 'Deletion reason' : 'Move notes (optional)'}<textarea aria-label={consumableAction.type === 'delete' ? 'Deletion reason' : 'Move notes (optional)'} required={consumableAction.type === 'delete'} maxLength={1000} disabled={busy} value={reason} onChange={event => setReason(event.target.value)}/></label>
+        <div className="unit-action-buttons"><button className={consumableAction.type === 'delete' ? 'delete-unit-button' : 'primary'} disabled={busy || (consumableAction.type === 'move' && !destinations.length)}>{savingUnit ? 'Saving…' : consumableAction.type === 'delete' ? 'Confirm delete' : 'Confirm move'}</button><button type="button" className="secondary" disabled={busy} onClick={() => { setConsumableAction(null); setUnitError('') }}>Cancel</button></div>
+      </form>}
       {actionUnit && <form className="unit-action-form" onSubmit={saveUnitAction}>
         <h3>{action.type === 'move' ? 'Move' : action.type === 'return' ? 'Return' : 'Delete'} {unitName(actionUnit)}</h3>
         {action.type === 'return' ? loadingReturn ? <p role="status">Checking active loans…</p> : <>
@@ -189,18 +232,22 @@ export function InventoryLabels({ shelf, shelves = [], close, onChange, migratio
       <div className="shelf-inventory-columns"><section className="shelf-equipment-column" aria-label="Equipment"><h3>Equipment</h3>
       {!equipmentUnits.length && <p className="inventory-column-empty">No equipment.</p>}
       <div className="equipment-label-list">{equipmentUnits.map(item => <div key={item.id}><span><b>{unitName(item)}</b><small className="equipment-item-name">{itemName(item, shelf)}</small>{item.description && <small className="item-description">{item.description}</small>}<small>{item.status.replaceAll('_', ' ')} · {item.condition}</small>{item.status === 'borrowed' && <small>Return this equipment before moving or deleting it.</small>}</span>
-        <div className="unit-action-buttons"><button type="button" className="secondary" disabled={busy} onClick={() => { setUnitId(item.id); setAction(null) }}>View QR</button>{item.status === 'borrowed' && <button type="button" className="secondary" aria-label={`Return ${unitName(item)}`} disabled={busy || migrationRequired} onClick={() => openReturnAction(item)}>Return</button>}<button type="button" className="secondary" aria-label={`Move ${unitName(item)}`} disabled={busy || actionsUnavailable || item.status === 'borrowed'} onClick={() => openUnitAction('move', item)}>Move</button><button type="button" className="delete-unit-button" aria-label={`Delete ${unitName(item)}`} disabled={busy || actionsUnavailable || permanentDeleteRequired || item.status === 'borrowed'} onClick={() => openUnitAction('delete', item)}>Delete</button></div>
+        <div className="unit-action-buttons"><button type="button" className="secondary" disabled={busy} onClick={() => { setUnitId(item.id); setAction(null); setConsumableAction(null) }}>View QR</button>{item.status === 'borrowed' && <button type="button" className="secondary" aria-label={`Return ${unitName(item)}`} disabled={busy || migrationRequired} onClick={() => openReturnAction(item)}>Return</button>}<button type="button" className="secondary" aria-label={`Move ${unitName(item)}`} disabled={busy || actionsUnavailable || item.status === 'borrowed'} onClick={() => openUnitAction('move', item)}>Move</button><button type="button" className="delete-unit-button" aria-label={`Delete ${unitName(item)}`} disabled={busy || actionsUnavailable || permanentDeleteRequired || item.status === 'borrowed'} onClick={() => openUnitAction('delete', item)}>Delete</button></div>
       </div>)}</div></section>
       <section className="shelf-consumable-column" aria-label="Consumables"><h3>Consumables</h3>
       {!consumableItems.length && <p className="inventory-column-empty">No consumables.</p>}
-      <div className="consumable-item-list">{consumableItems.map((item,index) => <article className="consumable-item-card" key={item.key}>
+      <div className="consumable-item-list">{consumableItems.map((item,index) => <article className="consumable-item-card" key={item.key}><div className="consumable-item-details">
         <b>{item.units[0].consumable_number ? itemLabel(item.units[0],shelf) : `Consumable ${String(index+1).padStart(3,'0')}`}</b>
         <strong>{item.name}</strong>
         {item.units[0].description && <small className="item-description">{item.units[0].description}</small>}
         <span className="consumable-quantity">Quantity: <b>{item.quantity}</b></span>
         {item.available !== item.quantity && <small>{item.available} available</small>}
+        </div><div className="unit-action-buttons">
+          <button type="button" className="secondary" aria-label={`View QR for ${itemLabel(item.units[0],shelf)}`} disabled={busy} onClick={() => { setShowShelfQR(true); setAction(null); setConsumableAction(null) }}>View QR</button>
+          <button type="button" className="secondary" aria-label={`Move ${itemLabel(item.units[0],shelf)}`} disabled={busy || actionsUnavailable} onClick={() => openConsumableAction('move',item)}>Move</button>
+          <button type="button" className="delete-unit-button" aria-label={`Delete ${itemLabel(item.units[0],shelf)}`} disabled={busy || actionsUnavailable || permanentDeleteRequired} onClick={() => openConsumableAction('delete',item)}>Delete</button>
+        </div>
       </article>)}</div>
-      {consumableItems.length > 0 && <button type="button" className="secondary" disabled={busy} onClick={() => { setShowShelfQR(true); setAction(null) }}>View consumable shelf QR</button>}
       </section></div>
     </>)}
     </div>
