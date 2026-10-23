@@ -49,3 +49,10 @@ export async function inventoryMigrationRequired(client) {
   }
   return { required, unitActionsRequired: Boolean(unitActionsError), permanentDeleteRequired: Boolean(permanentDeleteError), error: null }
 }
+
+export async function inventoryItemNamesRequired(client) {
+  const { error } = await client.from('inventory_units').select('item_name').limit(0)
+  if (!error) return { required: false, error: null }
+  if (['42703', '42P01', 'PGRST204', 'PGRST205'].includes(error.code)) return { required: true, error: null }
+  return { required: false, error }
+}

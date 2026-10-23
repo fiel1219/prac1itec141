@@ -56,6 +56,7 @@ export function InventoryLabels({ shelf, shelves = [], close, onChange, migratio
   const hasStock = units.length > 0
   const busy = deleting || savingUnit || loadingReturn || savingStock
   const actionsUnavailable = migrationRequired || unitActionsRequired
+  const deleteShelfHelp = migrationRequired ? 'Complete the database setup to delete shelves.' : permanentDeleteRequired ? 'Complete the permanent deletion database update shown on the main page.' : hasStock ? consumable ? 'Issue or remove all consumables before deleting this shelf.' : 'Move or delete the remaining units above to empty this shelf. Return borrowed equipment first.' : ''
   function requestClose() { if (!busy) close() }
   function openUnitAction(type, item) {
     setAddingItems(false); setStockError('')
@@ -160,7 +161,7 @@ export function InventoryLabels({ shelf, shelves = [], close, onChange, migratio
       <div className="unit-action-buttons"><button className="primary" disabled={busy}>{savingStock ? 'Adding…' : 'Confirm add'}</button><button type="button" className="secondary" disabled={busy} onClick={() => { setAddingItems(false); setStockError('') }}>Cancel</button></div>
     </form>}
     {consumable || unit ? <>{!consumable && <button className="secondary" onClick={() => setUnitId(null)}>All equipment units</button>}<QRLabel shelf={shelf} unit={consumable ? null : unit}/></> : <>
-      <h2>{shelf.name} · equipment QR labels</h2><p>View QR labels or manage equipment here. Return borrowed equipment before moving or deleting it.</p>
+      <h2>{shelf.name} · equipment QR labels</h2>
       {actionsUnavailable && <p className="unit-setup-help">Complete the unit management database setup shown on the main page to enable Move and Delete.</p>}
       {actionUnit && <form className="unit-action-form" onSubmit={saveUnitAction}>
         <h3>{action.type === 'move' ? 'Move' : action.type === 'return' ? 'Return' : 'Delete'} {unitName(actionUnit)}</h3>
@@ -177,15 +178,14 @@ export function InventoryLabels({ shelf, shelves = [], close, onChange, migratio
       <div className="equipment-label-list">{units.map(item => <div key={item.id}><span><b>{unitName(item)}</b><small>{item.status.replaceAll('_', ' ')} · {item.condition}</small><code>{item.id}</code>{item.status === 'borrowed' && <small>Return this unit before moving or deleting it.</small>}</span>
         <div className="unit-action-buttons"><button type="button" className="secondary" disabled={busy} onClick={() => { setUnitId(item.id); setAction(null) }}>View QR</button>{item.status === 'borrowed' && <button type="button" className="secondary" aria-label={`Return ${unitName(item)}`} disabled={busy || migrationRequired} onClick={() => openReturnAction(item)}>Return</button>}<button type="button" className="secondary" aria-label={`Move ${unitName(item)}`} disabled={busy || actionsUnavailable || item.status === 'borrowed'} onClick={() => openUnitAction('move', item)}>Move</button><button type="button" className="delete-unit-button" aria-label={`Delete ${unitName(item)}`} disabled={busy || actionsUnavailable || permanentDeleteRequired || item.status === 'borrowed'} onClick={() => openUnitAction('delete', item)}>Delete</button></div>
       </div>)}</div>
-      {!units.length && <p>This shelf is empty. You can delete it below or receive new stock.</p>}
     </>}
     </div>
     <div className="inventory-qr-actions">
       {deleteError && <div role="alert" className="connection-error">{deleteError}</div>}
-      <p id="delete-shelf-help">{migrationRequired ? 'Complete the database setup to delete shelves.' : permanentDeleteRequired ? 'Complete the permanent deletion database update shown on the main page.' : hasStock ? consumable ? 'Issue or remove all consumables before deleting this shelf.' : 'Move or delete the remaining units above to empty this shelf. Return borrowed equipment first.' : 'Permanently deletes this shelf from the database. Historical transaction records remain.'}</p>
+      {deleteShelfHelp && <p id="delete-shelf-help">{deleteShelfHelp}</p>}
       <div className="inventory-qr-action-buttons">
         <button type="button" className="primary" disabled={busy || addingItems || migrationRequired} onClick={openAddItems}>Add items</button>
-        <button type="button" className="delete-shelf-button" disabled={busy || addingItems || hasStock || migrationRequired || permanentDeleteRequired} aria-describedby="delete-shelf-help" onClick={deleteShelf}>{deleting ? 'Deleting…' : 'Delete shelf'}</button>
+        <button type="button" className="delete-shelf-button" disabled={busy || addingItems || hasStock || migrationRequired || permanentDeleteRequired} aria-describedby={deleteShelfHelp ? 'delete-shelf-help' : undefined} onClick={deleteShelf}>{deleting ? 'Deleting…' : 'Delete shelf'}</button>
       </div>
     </div>
   </div></div>

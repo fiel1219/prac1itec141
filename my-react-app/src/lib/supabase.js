@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
-import { loadInventoryUnits, loadTransactions, inventoryMigrationRequired } from './inventoryData'
+import { loadInventoryUnits, loadTransactions, inventoryMigrationRequired, inventoryItemNamesRequired } from './inventoryData'
 import { resolveInventoryQR } from './inventoryQR'
 
 const url = import.meta.env.VITE_SUPABASE_URL
@@ -21,12 +21,14 @@ export async function fetchShelves() {
   if (unitError) return { data: null, error: unitError }
   const { required, unitActionsRequired, permanentDeleteRequired, error: schemaError } = await inventoryMigrationRequired(supabase)
   if (schemaError) return { data: null, error: schemaError }
+  const { required: itemNamesRequired, error: itemNamesError } = await inventoryItemNamesRequired(supabase)
+  if (itemNamesError) return { data: null, error: itemNamesError }
   const grouped = new Map()
   for (const unit of units) {
     if (!grouped.has(unit.shelf_id)) grouped.set(unit.shelf_id, [])
     grouped.get(unit.shelf_id).push(unit)
   }
-  return { data: shelves.map(shelf => ({ ...shelf, inventory_units: (grouped.get(shelf.id) || []).sort((a,b) => a.unit_number-b.unit_number) })), error: null, migrationRequired: required, unitActionsRequired, permanentDeleteRequired }
+  return { data: shelves.map(shelf => ({ ...shelf, inventory_units: (grouped.get(shelf.id) || []).sort((a,b) => a.unit_number-b.unit_number) })), error: null, migrationRequired: required, unitActionsRequired, permanentDeleteRequired, itemNamesRequired }
 }
 
 export async function fetchBorrowers() {

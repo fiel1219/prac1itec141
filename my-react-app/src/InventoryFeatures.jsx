@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from './lib/supabase'
-import { activeUnits, availableUnits, isLowStock, inventorySummary, downloadCsv } from './lib/inventory'
+import { activeUnits, availableUnits, itemName, shelfItems, inventorySummary, downloadCsv } from './lib/inventory'
 import { isConsumableShelf } from './lib/inventoryQR'
 import './InventoryFeatures.css'
 
@@ -8,17 +8,18 @@ function Message({ error, success }) {
   return <>{error && <div role="alert" className="connection-error">{error}</div>}{success && <div role="status" className="success-message">{success}</div>}</>
 }
 
-const emptyShelf = { code: '', name: '', item_type: '', inventory_kind: 'equipment', low_stock_threshold: 2 }
+const emptyShelf = { code: '', name: '', inventory_kind: 'equipment', low_stock_threshold: 2 }
 
 function saveShelf(id, form) {
-  return supabase.rpc('inventory_save_qr_shelf', { p_id: id, p_code: form.code, p_name: form.name, p_item_type: form.item_type,
+  // Retain the legacy database field for older clients; item names belong to units.
+  return supabase.rpc('inventory_save_qr_shelf', { p_id: id, p_code: form.code, p_name: form.name, p_item_type: form.item_type || (form.inventory_kind === 'consumable' ? 'Consumables' : 'Equipment'),
     p_threshold: Number(form.low_stock_threshold), p_inventory_kind: form.inventory_kind || 'equipment' })
 }
 
 function ShelfForm({ form, setForm, onSubmit, onCancel, busy, title }) {
   return <form className="inventory-form" onSubmit={onSubmit} aria-label={title || 'Add shelf'}>
     {title && <h3>{title}</h3>}
-    {[['code','Shelf code'],['name','Shelf name'],['item_type','Item / product type']].map(([key,label]) => <label key={key}>{label}<input required maxLength={120} disabled={busy} autoFocus={key === 'code'} value={form[key]} onChange={event => setForm({ ...form, [key]: event.target.value })}/></label>)}
+    {[['code','Shelf code'],['name','Shelf name']].map(([key,label]) => <label key={key}>{label}<input required maxLength={120} disabled={busy} autoFocus={key === 'code'} value={form[key]} onChange={event => setForm({ ...form, [key]: event.target.value })}/></label>)}
     <label>Inventory category<select aria-label="Inventory category" required disabled={busy} value={form.inventory_kind || 'equipment'} onChange={event => setForm({ ...form, inventory_kind: event.target.value })}><option value="equipment">Equipment · QR per unit</option><option value="consumable">Consumables · QR per shelf</option></select></label>
     <div className="inventory-buttons"><button className="primary" disabled={busy}>{busy ? 'Saving…' : 'Save shelf'}</button><button type="button" className="secondary" disabled={busy} onClick={onCancel}>Cancel</button></div>
   </form>
