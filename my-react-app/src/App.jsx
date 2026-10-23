@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import './App.css'
 import { fetchShelves, fetchBorrowers, fetchTransactions, fetchUsers, fetchApprovals, isSupabaseConfigured, supabase } from './lib/supabase'
 import { InventoryLabels, InventoryScanner } from './InventoryQR'
-import { AddShelfDialog, ItemManagement, StockMovements, Reports, LowStockAlerts } from './InventoryFeatures'
+import { AddShelfDialog, ItemManagement, StockMovements, Reports } from './InventoryFeatures'
 import { activeUnits, availableUnits as getAvailableUnits } from './lib/inventory'
 
 const nav = ['Dashboard','Scan QR','Shelves','Items','Stock Movements','Borrowers','Returns','Transaction History','Inventory Checks','Reports']
@@ -48,8 +48,7 @@ export default function App() {
     {migrationRequired && <section className="card inventory-alerts" role="status"><h2>Inventory update needs database setup</h2><p>Your inventory is available to view. To enable item management, stock movements, reports, and checkout/returns, run <code>supabase/inventoscan_features.sql</code> followed by <code>supabase/inventory_qr.sql</code> in your Supabase SQL Editor, then refresh this page.</p></section>}
     {!migrationRequired && unitActionsRequired && !loading && <section className="card inventory-alerts" role="status"><h2>Unit management needs a database update</h2><p>To enable Move and Delete beside each equipment unit, run <code>supabase/inventory_unit_actions.sql</code> in your Supabase SQL Editor, then refresh this page.</p></section>}
     {!migrationRequired && permanentDeleteRequired && !loading && <section className="card inventory-alerts" role="status"><h2>Permanent deletion needs a database update</h2><p>Run <code>supabase/inventory_permanent_delete.sql</code> after the previous inventory migrations, then refresh. Delete will remove shelf and equipment rows from the database.</p></section>}
-    {page==='Dashboard' && <section className="stats">{[['Total units',units.length,'From Supabase','▤'],['Available',dbShelves.reduce((total, shelf) => total + getAvailableUnits(shelf).length, 0),'Live inventory count','✓'],['Borrowed',count('borrowed'),'Live inventory count','↗'],['Needs attention',units.filter(u=>u.status==='under_maintenance'||u.condition==='damaged').length,'Damaged or maintenance','!']].map((x,i)=><div className="stat" key={x[0]}><i className={'c'+i}>{x[3]}</i><small>{x[0]}</small><strong>{loading?'…':x[1]}</strong><em>{x[2]}</em></div>)}</section>}
-    {page==='Dashboard' && !loading && !error && !migrationRequired && <LowStockAlerts shelves={dbShelves}/>}
+    {page==='Dashboard' && <section className="stats">{[['Total units',units.length,'From Supabase','▤'],['Available',dbShelves.reduce((total, shelf) => total + getAvailableUnits(shelf).length, 0),'Live inventory count','✓'],['Borrowed',count('borrowed'),'Live inventory count','↗'],['Needs attention',units.filter(u=>u.status==='under_maintenance'||u.condition==='damaged').length,'Damaged or maintenance','!'],['Total shelves',dbShelves.length,'Live shelf count','▥']].map((x,i)=><div className="stat" key={x[0]}><i className={'c'+i}>{x[3]}</i><small>{x[0]}</small><strong>{loading?'…':x[1]}</strong><em>{x[2]}</em></div>)}</section>}
     {page==='Items' && !migrationRequired && <ItemManagement shelves={dbShelves} onChange={refreshInventory} onQR={setSelectedShelf} onUnitQR={(shelf, unit) => setSelectedShelf({ ...shelf, qrUnit: unit })} permanentDeleteRequired={permanentDeleteRequired}/>}
     {page==='Stock Movements' && !migrationRequired && <StockMovements shelves={dbShelves} onChange={refreshInventory}/>}
     {page==='Reports' && !loading && !error && !migrationRequired && <Reports shelves={dbShelves}/>}

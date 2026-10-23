@@ -8,11 +8,6 @@ function Message({ error, success }) {
   return <>{error && <div role="alert" className="connection-error">{error}</div>}{success && <div role="status" className="success-message">{success}</div>}</>
 }
 
-export function LowStockAlerts({ shelves }) {
-  const low = shelves.filter(isLowStock)
-  return <section className="card inventory-alerts" aria-label="Low-stock alerts"><h2>Low-stock alerts</h2>{low.length ? <ul>{low.map(shelf => <li key={shelf.id}><b>{shelf.name}</b> ({shelf.code}): {availableUnits(shelf).length} available · threshold {shelf.low_stock_threshold ?? 2}</li>)}</ul> : <p>All shelves are above their low-stock thresholds.</p>}</section>
-}
-
 const emptyShelf = { code: '', name: '', item_type: '', inventory_kind: 'equipment', low_stock_threshold: 2 }
 
 function saveShelf(id, form) {
@@ -25,7 +20,6 @@ function ShelfForm({ form, setForm, onSubmit, onCancel, busy, title }) {
     {title && <h3>{title}</h3>}
     {[['code','Shelf code'],['name','Shelf name'],['item_type','Item / product type']].map(([key,label]) => <label key={key}>{label}<input required maxLength={120} disabled={busy} autoFocus={key === 'code'} value={form[key]} onChange={event => setForm({ ...form, [key]: event.target.value })}/></label>)}
     <label>Inventory category<select aria-label="Inventory category" required disabled={busy} value={form.inventory_kind || 'equipment'} onChange={event => setForm({ ...form, inventory_kind: event.target.value })}><option value="equipment">Equipment · QR per unit</option><option value="consumable">Consumables · QR per shelf</option></select></label>
-    <label>Low-stock threshold<input type="number" min="0" max="1000000" step="1" required disabled={busy} value={form.low_stock_threshold} onChange={event => setForm({ ...form, low_stock_threshold: event.target.value })}/></label>
     <div className="inventory-buttons"><button className="primary" disabled={busy}>{busy ? 'Saving…' : 'Save shelf'}</button><button type="button" className="secondary" disabled={busy} onClick={onCancel}>Cancel</button></div>
   </form>
 }
