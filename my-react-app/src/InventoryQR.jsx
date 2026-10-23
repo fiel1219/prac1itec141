@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import QRCode from 'qrcode'
 import { fetchBorrowers, fetchInventoryByQR, supabase } from './lib/supabase'
-import { activeUnits, availableUnits, itemName, shelfItems } from './lib/inventory'
+import { activeUnits, availableUnits, stockQuantity, itemName, itemLabel, shelfItems } from './lib/inventory'
 import { equipmentQRValue, isConsumableUnit } from './lib/inventoryQR'
 import './InventoryQR.css'
 
-const unitName = unit => `Unit ${String(unit.unit_number).padStart(3, '0')}`
+const unitName = unit => `Equipment ${String(unit.unit_number).padStart(3, '0')}`
 
 function QRLabel({ shelf, unit }) {
   const [generated, setGenerated] = useState(null), [failure, setFailure] = useState(null)
@@ -57,7 +57,7 @@ export function InventoryLabels({ shelf, shelves = [], close, onChange, migratio
   const equipmentUnits = units.filter(item => !isConsumableUnit(item, shelf))
   const consumableItems = shelfItems({ ...shelf, inventory_units: units.filter(item => isConsumableUnit(item, shelf)) })
   const destinations = shelves.filter(item => item.id !== shelf.id && item.status === 'active')
-  const hasStock = units.length > 0
+  const hasStock = stockQuantity({ ...shelf,inventory_units:units }) > 0
   const busy = deleting || savingUnit || loadingReturn || savingStock
   const actionsUnavailable = migrationRequired || unitActionsRequired || itemCategoriesRequired
   const deleteShelfHelp = migrationRequired ? 'Complete the database setup to delete shelves.' : permanentDeleteRequired ? 'Complete the permanent deletion database update shown on the main page.' : hasStock ? 'Move or delete equipment and issue remaining consumables to empty this shelf. Return borrowed equipment first.' : ''
@@ -87,7 +87,7 @@ export function InventoryLabels({ shelf, shelves = [], close, onChange, migratio
       setSuccess(`${count} ${stockItem.trim()} item(s) added to ${shelf.name}.`)
       await onChange()
     } catch (failure) { setStockError(failure.code === 'PGRST202'
-      ? 'Run supabase/inventory_item_categories.sql after the previous migrations, then try again.'
+      ? 'Run supabase/inventory_consumable_quantities.sql after the previous migrations, then try again.'
       : failure.message) }
     finally { setSavingStock(false) }
   }
@@ -155,7 +155,7 @@ export function InventoryLabels({ shelf, shelves = [], close, onChange, migratio
     } catch (failure) { setDeleteError(failure.message) }
     finally { setDeleting(false) }
   }
-  return <div className="backdrop inventory-qr-backdrop" onClick={requestClose}><div className="modal qr-modal inventory-qr-modal" role="dialog" aria-modal="true" aria-label="Inventory QR labels" onClick={event => event.stopPropagation()}>
+  return <div className="backdrop inventory-qr-backdrop" onClick={requestClose}><div className={'modal qr-modal inventory-qr-modal' + (!addingItems && !showShelfQR && !unit ? ' shelf-inventory-modal' : '')} role="dialog" aria-modal="true" aria-label="Inventory QR labels" onClick={event => event.stopPropagation()}>
     <button className="x" onClick={requestClose} disabled={busy} aria-label="Close QR labels">×</button>
     <div className="inventory-qr-body" ref={body}>
     {unitError && <div role="alert" className="connection-error">{unitError}</div>}
@@ -173,7 +173,6 @@ export function InventoryLabels({ shelf, shelves = [], close, onChange, migratio
     </> : <>
       <h2>{shelf.name} · items</h2>
       {shelf.description && <p className="item-description">{shelf.description}</p>}
-      {consumableItems.length > 0 && <section aria-label="Consumables" className="shelf-item-summary"><h3>Consumables</h3>{consumableItems.map(item => <div key={item.key}><b>{item.name}</b><span>{item.available} available · {item.units.length} total</span></div>)}<button type="button" className="secondary" disabled={busy} onClick={() => { setShowShelfQR(true); setAction(null) }}>View consumable shelf QR</button></section>}
       {actionsUnavailable && <p className="unit-setup-help">Complete the unit management database setup shown on the main page to enable Move and Delete.</p>}
       {actionUnit && <form className="unit-action-form" onSubmit={saveUnitAction}>
         <h3>{action.type === 'move' ? 'Move' : action.type === 'return' ? 'Return' : 'Delete'} {unitName(actionUnit)}</h3>
@@ -187,9 +186,22 @@ export function InventoryLabels({ shelf, shelves = [], close, onChange, migratio
         {!(action.type === 'return' && (loadingReturn || returnLoans.length)) && <label>{action.type === 'delete' ? 'Deletion reason' : action.type === 'return' ? 'Return confirmation reason' : 'Move notes (optional)'}<textarea required={action.type !== 'move'} maxLength={1000} disabled={busy} value={reason} onChange={event => setReason(event.target.value)}/></label>}
         <div className="unit-action-buttons"><button className={action.type === 'delete' ? 'delete-unit-button' : 'primary'} disabled={busy || (action.type === 'move' && !destinations.length) || (action.type === 'delete' && permanentDeleteRequired)}>{savingUnit ? 'Saving…' : action.type === 'delete' ? 'Confirm delete' : action.type === 'return' ? 'Confirm return' : 'Confirm move'}</button><button type="button" className="secondary" disabled={busy} onClick={() => { setAction(null); setUnitError('') }}>Cancel</button></div>
       </form>}
-      <div className="equipment-label-list">{equipmentUnits.map(item => <div key={item.id}><span><b>{unitName(item)}</b><small className="equipment-item-name">{itemName(item, shelf)}</small>{item.description && <small className="item-description">{item.description}</small>}<small>Equipment · {item.status.replaceAll('_', ' ')} · {item.condition}</small><code>{item.id}</code>{item.status === 'borrowed' && <small>Return this unit before moving or deleting it.</small>}</span>
+      <div className="shelf-inventory-columns"><section className="shelf-equipment-column" aria-label="Equipment"><h3>Equipment</h3>
+      {!equipmentUnits.length && <p className="inventory-column-empty">No equipment.</p>}
+      <div className="equipment-label-list">{equipmentUnits.map(item => <div key={item.id}><span><b>{unitName(item)}</b><small className="equipment-item-name">{itemName(item, shelf)}</small>{item.description && <small className="item-description">{item.description}</small>}<small>{item.status.replaceAll('_', ' ')} · {item.condition}</small>{item.status === 'borrowed' && <small>Return this equipment before moving or deleting it.</small>}</span>
         <div className="unit-action-buttons"><button type="button" className="secondary" disabled={busy} onClick={() => { setUnitId(item.id); setAction(null) }}>View QR</button>{item.status === 'borrowed' && <button type="button" className="secondary" aria-label={`Return ${unitName(item)}`} disabled={busy || migrationRequired} onClick={() => openReturnAction(item)}>Return</button>}<button type="button" className="secondary" aria-label={`Move ${unitName(item)}`} disabled={busy || actionsUnavailable || item.status === 'borrowed'} onClick={() => openUnitAction('move', item)}>Move</button><button type="button" className="delete-unit-button" aria-label={`Delete ${unitName(item)}`} disabled={busy || actionsUnavailable || permanentDeleteRequired || item.status === 'borrowed'} onClick={() => openUnitAction('delete', item)}>Delete</button></div>
-      </div>)}</div>
+      </div>)}</div></section>
+      <section className="shelf-consumable-column" aria-label="Consumables"><h3>Consumables</h3>
+      {!consumableItems.length && <p className="inventory-column-empty">No consumables.</p>}
+      <div className="consumable-item-list">{consumableItems.map((item,index) => <article className="consumable-item-card" key={item.key}>
+        <b>{item.units[0].consumable_number ? itemLabel(item.units[0],shelf) : `Consumable ${String(index+1).padStart(3,'0')}`}</b>
+        <strong>{item.name}</strong>
+        {item.units[0].description && <small className="item-description">{item.units[0].description}</small>}
+        <span className="consumable-quantity">Quantity: <b>{item.quantity}</b></span>
+        {item.available !== item.quantity && <small>{item.available} available</small>}
+      </article>)}</div>
+      {consumableItems.length > 0 && <button type="button" className="secondary" disabled={busy} onClick={() => { setShowShelfQR(true); setAction(null) }}>View consumable shelf QR</button>}
+      </section></div>
     </>)}
     </div>
     {!addingItems && <div className="inventory-qr-actions">

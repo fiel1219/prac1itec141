@@ -61,6 +61,7 @@ export async function inventoryItemCategoriesRequired(client) {
   const checks = await Promise.all([
     client.from('inventory_units').select('inventory_kind').limit(0),
     client.from('shelves').select('description').limit(0),
+    client.from('inventory_units').select('quantity,consumable_number').limit(0),
   ])
   let required = false
   for (const { error } of checks) {

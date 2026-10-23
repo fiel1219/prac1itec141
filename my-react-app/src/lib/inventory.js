@@ -2,7 +2,11 @@ import { itemKind } from './inventoryQR.js'
 
 export const activeUnits = shelf => (shelf.inventory_units || []).filter(unit => !unit.retired_at)
 export const availableUnits = shelf => activeUnits(shelf).filter(unit => unit.status === 'available' && unit.condition === 'good')
-export const isLowStock = shelf => availableUnits(shelf).length <= Number(shelf.low_stock_threshold ?? 2)
+export const recordQuantity = (unit, shelf) => itemKind(unit, shelf) === 'consumable' ? Number(unit.quantity ?? 1) : 1
+export const stockQuantity = shelf => activeUnits(shelf).reduce((total,unit) => total + recordQuantity(unit,shelf),0)
+export const availableQuantity = shelf => availableUnits(shelf).reduce((total,unit) => total + recordQuantity(unit,shelf),0)
+export const itemLabel = (unit, shelf) => `${itemKind(unit,shelf) === 'consumable' ? 'Consumable' : 'Equipment'} ${String(itemKind(unit,shelf) === 'consumable' ? unit.consumable_number ?? unit.unit_number : unit.unit_number).padStart(3,'0')}`
+export const isLowStock = shelf => availableQuantity(shelf) <= Number(shelf.low_stock_threshold ?? 2)
 export const itemName = (unit, shelf) => unit?.item_name?.trim() || shelf?.item_type?.trim() || 'Item'
 export function shelfItems(shelf) {
   const groups = new Map()
@@ -11,8 +15,8 @@ export function shelfItems(shelf) {
     if (!groups.has(key)) groups.set(key, { key, name, kind, units: [] })
     groups.get(key).units.push(unit)
   }
-  return [...groups.values()].map(group => ({ ...group,
-    available: availableUnits({ inventory_units: group.units }).length })).sort((a,b) => a.name.localeCompare(b.name))
+  return [...groups.values()].map(group => ({ ...group, quantity: stockQuantity({ ...shelf, inventory_units: group.units }),
+    available: availableQuantity({ ...shelf, inventory_units: group.units }) })).sort((a,b) => a.name.localeCompare(b.name))
 }
 
 export function inventorySummary(shelves) {
@@ -22,11 +26,11 @@ export function inventorySummary(shelves) {
       const units = group.units, subset = { ...shelf, inventory_units: units }
       return {
         code: shelf.code, name: shelf.name, item_type: group.name, inventory_kind: group.kind || '', category: group.kind === 'consumable' ? 'Consumables' : group.kind === 'equipment' ? 'Equipment' : '',
-        total: units.length, available: availableUnits(subset).length,
-        borrowed: units.filter(unit => unit.status === 'borrowed').length,
-        damaged: units.filter(unit => unit.condition === 'damaged').length,
-        maintenance: units.filter(unit => unit.status === 'under_maintenance').length,
-        missing: units.filter(unit => ['missing', 'not_found'].includes(unit.status)).length,
+        total: stockQuantity(subset), available: availableQuantity(subset),
+        borrowed: units.filter(unit => unit.status === 'borrowed').reduce((sum,unit) => sum + recordQuantity(unit,shelf),0),
+        damaged: units.filter(unit => unit.condition === 'damaged').reduce((sum,unit) => sum + recordQuantity(unit,shelf),0),
+        maintenance: units.filter(unit => unit.status === 'under_maintenance').reduce((sum,unit) => sum + recordQuantity(unit,shelf),0),
+        missing: units.filter(unit => ['missing', 'not_found'].includes(unit.status)).reduce((sum,unit) => sum + recordQuantity(unit,shelf),0),
         threshold: shelf.low_stock_threshold ?? 2, low_stock: isLowStock(subset) ? 'Yes' : 'No',
       }
     })
