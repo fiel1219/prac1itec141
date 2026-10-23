@@ -40,6 +40,7 @@ export function InventoryLabels({ shelf, shelves = [], close, onChange, migratio
   const [deleting, setDeleting] = useState(false), [deleteError, setDeleteError] = useState('')
   const [action, setAction] = useState(null), [destinationId, setDestinationId] = useState(''), [reason, setReason] = useState('')
   const [consumableAction, setConsumableAction] = useState(null)
+  const [selectedKeys, setSelectedKeys] = useState([]), [bulkAction, setBulkAction] = useState(null)
   const [savingUnit, setSavingUnit] = useState(false), [unitError, setUnitError] = useState(''), [success, setSuccess] = useState('')
   const [removedIds, setRemovedIds] = useState([])
   const [unitOverrides, setUnitOverrides] = useState({})
@@ -62,22 +63,71 @@ export function InventoryLabels({ shelf, shelves = [], close, onChange, migratio
   const hasStock = stockQuantity({ ...shelf,inventory_units:units }) > 0
   const busy = deleting || savingUnit || loadingReturn || savingStock
   const actionsUnavailable = migrationRequired || unitActionsRequired || itemCategoriesRequired
+  const selectableEquipment = equipmentUnits.filter(item => item.status !== 'borrowed')
+  const selectableConsumables = consumableItems.filter(item => item.units.every(unit => unit.status !== 'borrowed'))
+  const selectableKeys = [...selectableEquipment.map(item => `equipment:${item.id}`), ...selectableConsumables.map(item => item.key)]
+  const selectedEquipment = selectableEquipment.filter(item => selectedKeys.includes(`equipment:${item.id}`))
+  const selectedConsumables = selectableConsumables.filter(item => selectedKeys.includes(item.key))
+  const selectedCount = selectedEquipment.length + selectedConsumables.length
+  const selectionDisabled = busy || actionsUnavailable || !!bulkAction
   const deleteShelfHelp = migrationRequired ? 'Complete the database setup to delete shelves.' : permanentDeleteRequired ? 'Complete the permanent deletion database update shown on the main page.' : hasStock ? 'Move or delete the remaining items to empty this shelf. Return borrowed equipment first.' : ''
   function requestClose() { if (!busy) close() }
   function openUnitAction(type, item) {
+    setBulkAction(null)
     setAddingItems(false); setStockError(''); setConsumableAction(null)
     setAction({ type, id: item.id }); setDestinationId(''); setReason(''); setUnitError(''); setSuccess(''); setUnitId(null)
     body.current?.scrollTo({ top: 0 })
   }
   function openAddItems() {
+    setBulkAction(null); setSelectedKeys([])
     setStockItem(''); setDescription(''); setInventoryKind('equipment'); setShowShelfQR(false); setConsumableAction(null)
     setAddingItems(true); setQuantity(1); setStockError(''); setSuccess(''); setAction(null); setUnitId(null); setUnitError(''); setDeleteError('')
     body.current?.scrollTo({ top: 0 })
   }
   function openConsumableAction(type, item) {
+    setBulkAction(null)
     setConsumableAction({ type, key:item.key }); setAction(null); setUnitId(null); setShowShelfQR(false)
     setDestinationId(''); setReason(''); setUnitError(''); setSuccess(''); setStockError('')
     body.current?.scrollTo({ top:0 })
+  }
+  function toggleSelection(key) {
+    if (selectionDisabled) return
+    setSelectedKeys(previous => previous.includes(key) ? previous.filter(value => value !== key) : [...previous,key])
+  }
+  function openBulkAction(type) {
+    if (busy || actionsUnavailable || !selectedCount || (type === 'delete' && permanentDeleteRequired)) return
+    setBulkAction({ type, equipment:selectedEquipment, consumables:selectedConsumables })
+    setAction(null); setConsumableAction(null); setUnitId(null); setShowShelfQR(false)
+    setDestinationId(''); setReason(''); setUnitError(''); setSuccess(''); setStockError('')
+    body.current?.scrollTo({ top:0 })
+  }
+  async function saveBulkAction(event) {
+    event.preventDefault()
+    if (busy || !bulkAction || actionsUnavailable || (bulkAction.type === 'delete' && permanentDeleteRequired)) return
+    const destination = destinations.find(item => item.id === destinationId)
+    setUnitError(''); setSuccess('')
+    if (bulkAction.type === 'move' && !destination) { setUnitError('Choose a destination shelf.'); return }
+    if (bulkAction.type === 'delete' && !reason.trim()) { setUnitError('Enter a deletion reason.'); return }
+    setSavingUnit(true)
+    try {
+      const { error } = await supabase.rpc('inventory_bulk_item_action', {
+        p_shelf_id:shelf.id, p_action:bulkAction.type,
+        p_equipment_ids:bulkAction.equipment.map(item => item.id),
+        p_consumables:bulkAction.consumables.map(item => ({ item_name:item.name, expected_quantity:item.quantity })),
+        p_destination_shelf_id:destination?.id || null, p_reason:reason.trim(),
+      })
+      if (error) throw error
+      const ids = [...bulkAction.equipment.map(item => item.id), ...bulkAction.consumables.flatMap(item => item.units.map(unit => unit.id))]
+      const count = bulkAction.equipment.length + bulkAction.consumables.length
+      setRemovedIds(previous => [...previous,...ids]); setSelectedKeys([])
+      setSuccess(bulkAction.type === 'move' ? `${count} selected item(s) moved to ${destination.code}.` : `${count} selected item(s) permanently deleted from the database.`)
+      setBulkAction(null)
+      await onChange()
+    } catch (failure) {
+      setUnitError(failure.code === 'PGRST202'
+        ? 'Run supabase/inventory_bulk_actions.sql after inventory_consumable_actions.sql, then try again.'
+        : failure.message)
+    } finally { setSavingUnit(false) }
   }
   async function saveConsumableAction(event) {
     event.preventDefault()
@@ -207,6 +257,27 @@ export function InventoryLabels({ shelf, shelves = [], close, onChange, migratio
       <h2>{shelf.name} · items</h2>
       {shelf.description && <p className="item-description">{shelf.description}</p>}
       {actionsUnavailable && <p className="unit-setup-help">Complete the unit management database setup shown on the main page to enable Move and Delete.</p>}
+      {!!selectableKeys.length && <div className="inventory-selection-toolbar" role="group" aria-label="Item selection">
+        <button type="button" className="secondary" disabled={selectionDisabled || selectedCount === selectableKeys.length} onClick={() => setSelectedKeys(selectableKeys)}>Select all items</button>
+        <span role="status">{selectedCount} selected</span>
+        {!!selectedCount && <button type="button" className="secondary" disabled={selectionDisabled} onClick={() => setSelectedKeys([])}>Clear selection</button>}
+        <button type="button" className="secondary" disabled={busy || actionsUnavailable || !selectedCount || !!bulkAction || !destinations.length} onClick={() => openBulkAction('move')}>Move selected</button>
+        <button type="button" className="delete-unit-button" disabled={busy || actionsUnavailable || permanentDeleteRequired || !selectedCount || !!bulkAction} onClick={() => openBulkAction('delete')}>Delete selected</button>
+      </div>}
+      {equipmentUnits.some(item => item.status === 'borrowed') && <p className="inventory-selection-help">Return borrowed equipment before selecting it.</p>}
+      {bulkAction && <form className="unit-action-form" aria-label={`${bulkAction.type === 'move' ? 'Move' : 'Delete'} selected items`} onSubmit={saveBulkAction}>
+        <h3>{bulkAction.type === 'move' ? 'Move' : 'Delete'} {bulkAction.equipment.length + bulkAction.consumables.length} selected item(s)</h3>
+        <ul className="bulk-item-summary">
+          {bulkAction.equipment.map(item => <li key={item.id}>{unitName(item)} · {itemName(item,shelf)}</li>)}
+          {bulkAction.consumables.map(item => <li key={item.key}>{itemLabel(item.units[0],shelf)} · {item.name} · quantity {item.quantity}</li>)}
+        </ul>
+        {bulkAction.type === 'move' ? <>
+          <p>Move all selected equipment and the full quantity of each selected consumable. Matching consumable stock will be combined at the destination.</p>
+          <label>Destination shelf<select aria-label="Destination shelf" required disabled={busy} value={destinationId} onChange={event => setDestinationId(event.target.value)}><option value="">Choose a shelf</option>{destinations.map(item => <option key={item.id} value={item.id}>{item.code} · {item.name}</option>)}</select></label>
+        </> : <p>Permanently delete these items and their remaining quantities from the database. This cannot be undone. Historical movement records remain.</p>}
+        <label>{bulkAction.type === 'delete' ? 'Deletion reason' : 'Move notes (optional)'}<textarea aria-label={bulkAction.type === 'delete' ? 'Deletion reason' : 'Move notes (optional)'} required={bulkAction.type === 'delete'} maxLength={1000} disabled={busy} value={reason} onChange={event => setReason(event.target.value)}/></label>
+        <div className="unit-action-buttons"><button className={bulkAction.type === 'delete' ? 'delete-unit-button' : 'primary'} disabled={busy || (bulkAction.type === 'move' && !destinations.length)}>{savingUnit ? 'Saving…' : bulkAction.type === 'delete' ? 'Confirm delete selected' : 'Confirm move selected'}</button><button type="button" className="secondary" disabled={busy} onClick={() => { setBulkAction(null); setUnitError('') }}>Cancel</button></div>
+      </form>}
       {actionConsumable && <form className="unit-action-form" aria-label={`${consumableAction.type === 'move' ? 'Move' : 'Delete'} consumable`} onSubmit={saveConsumableAction}>
         <h3>{consumableAction.type === 'move' ? 'Move' : 'Delete'} {itemLabel(actionConsumable.units[0],shelf)} · {actionConsumable.name}</h3>
         {consumableAction.type === 'move' ? <>
@@ -231,13 +302,13 @@ export function InventoryLabels({ shelf, shelves = [], close, onChange, migratio
       </form>}
       <div className="shelf-inventory-columns"><section className="shelf-equipment-column" aria-label="Equipment"><h3>Equipment</h3>
       {!equipmentUnits.length && <p className="inventory-column-empty">No equipment.</p>}
-      <div className="equipment-label-list">{equipmentUnits.map(item => <div key={item.id}><span><b>{unitName(item)}</b><small className="equipment-item-name">{itemName(item, shelf)}</small>{item.description && <small className="item-description">{item.description}</small>}<small>{item.status.replaceAll('_', ' ')} · {item.condition}</small>{item.status === 'borrowed' && <small>Return this equipment before moving or deleting it.</small>}</span>
+      <div className="equipment-label-list">{equipmentUnits.map(item => <div key={item.id} className={selectedKeys.includes(`equipment:${item.id}`) ? 'inventory-item-selected' : ''}><span><label className="inventory-item-select"><input type="checkbox" aria-label={`Select ${unitName(item)} · ${itemName(item,shelf)}`} disabled={selectionDisabled || item.status === 'borrowed'} checked={item.status !== 'borrowed' && selectedKeys.includes(`equipment:${item.id}`)} onChange={() => toggleSelection(`equipment:${item.id}`)}/><b>{unitName(item)}</b></label><small className="equipment-item-name">{itemName(item, shelf)}</small>{item.description && <small className="item-description">{item.description}</small>}<small>{item.status.replaceAll('_', ' ')} · {item.condition}</small>{item.status === 'borrowed' && <small>Return this equipment before moving or deleting it.</small>}</span>
         <div className="unit-action-buttons"><button type="button" className="secondary" disabled={busy} onClick={() => { setUnitId(item.id); setAction(null); setConsumableAction(null) }}>View QR</button>{item.status === 'borrowed' && <button type="button" className="secondary" aria-label={`Return ${unitName(item)}`} disabled={busy || migrationRequired} onClick={() => openReturnAction(item)}>Return</button>}<button type="button" className="secondary" aria-label={`Move ${unitName(item)}`} disabled={busy || actionsUnavailable || item.status === 'borrowed'} onClick={() => openUnitAction('move', item)}>Move</button><button type="button" className="delete-unit-button" aria-label={`Delete ${unitName(item)}`} disabled={busy || actionsUnavailable || permanentDeleteRequired || item.status === 'borrowed'} onClick={() => openUnitAction('delete', item)}>Delete</button></div>
       </div>)}</div></section>
       <section className="shelf-consumable-column" aria-label="Consumables"><h3>Consumables</h3>
       {!consumableItems.length && <p className="inventory-column-empty">No consumables.</p>}
-      <div className="consumable-item-list">{consumableItems.map((item,index) => <article className="consumable-item-card" key={item.key}><div className="consumable-item-details">
-        <b>{item.units[0].consumable_number ? itemLabel(item.units[0],shelf) : `Consumable ${String(index+1).padStart(3,'0')}`}</b>
+      <div className="consumable-item-list">{consumableItems.map((item,index) => <article className={'consumable-item-card' + (selectedKeys.includes(item.key) ? ' inventory-item-selected' : '')} key={item.key}><div className="consumable-item-details">
+        <label className="inventory-item-select"><input type="checkbox" aria-label={`Select ${itemLabel(item.units[0],shelf)} · ${item.name}`} disabled={selectionDisabled || !selectableConsumables.includes(item)} checked={selectableConsumables.includes(item) && selectedKeys.includes(item.key)} onChange={() => toggleSelection(item.key)}/><b>{item.units[0].consumable_number ? itemLabel(item.units[0],shelf) : `Consumable ${String(index+1).padStart(3,'0')}`}</b></label>
         <strong>{item.name}</strong>
         {item.units[0].description && <small className="item-description">{item.units[0].description}</small>}
         <span className="consumable-quantity">Quantity: <b>{item.quantity}</b></span>
