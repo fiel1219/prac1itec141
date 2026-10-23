@@ -40,6 +40,9 @@ test('migration and complete inventory lifecycle preserve counts and history', a
     const migration = await readFile(new URL('../supabase/inventoscan_features.sql',import.meta.url),'utf8')
     await db.exec(migration)
     await db.exec(migration) // Reruns must not duplicate tables, policies, or triggers.
+    const qrMigration = await readFile(new URL('../supabase/inventory_qr.sql', import.meta.url), 'utf8')
+    await db.exec(qrMigration)
+    await db.exec(qrMigration)
     await db.exec(`set role authenticated; select set_config('test.uid','11111111-1111-1111-1111-111111111111',false)`)
     const shelf = (await db.query(`select public.inventory_save_shelf(null,'A-01','Microscopes','Equipment',2) as id`)).rows[0].id
     const call = (sql,params) => db.query(sql,params)
@@ -60,6 +63,7 @@ test('migration and complete inventory lifecycle preserve counts and history', a
     const checkout = () => call(`select public.inventory_checkout($1,$2,current_date+14)`,[unit,borrower])
     await checkout()
     assert.equal((await units())[0].status,'borrowed')
+    await assert.rejects(call(`select public.inventory_save_qr_shelf($1,'A-01','Microscopes','Equipment',2,'consumable')`, [shelf]), /Return borrowed equipment/)
     await assert.rejects(checkout(),/no longer available/)
     await assert.rejects(call(`select public.inventory_update_unit($1,'available','good','')`,[unit]),/Return borrowed/)
     await assert.rejects(remove(3),/Not enough/)
@@ -81,7 +85,19 @@ test('migration and complete inventory lifecycle preserve counts and history', a
     assert.equal(await movementCount(),11)
     assert.equal(Number((await db.query('select count(*) from public.transactions')).rows[0].count),1)
     assert.equal((await db.query('select returned_by from public.transactions')).rows[0].returned_by,'operator@example.test')
+    const consumable = (await call(`select public.inventory_save_qr_shelf(null,'C-01','Gloves','Gloves',2,'consumable') as id`)).rows[0].id
+    await call(`select public.inventory_stock_move($1,'in',3,'Received gloves')`, [consumable])
+    const supply = (await call('select id from public.inventory_units where shelf_id=$1 order by unit_number', [consumable])).rows[0].id
+    await assert.rejects(call('select public.inventory_checkout($1,$2,current_date+14)', [supply,borrower]), /Consumables are issued/)
+    assert.equal((await call('select status from public.inventory_units where id=$1', [supply])).rows[0].status, 'available')
+    const originalQR = (await call('select qr_value from public.shelves where id=$1', [consumable])).rows[0].qr_value
+    await call(`select public.inventory_save_qr_shelf($1,'C-02','Gloves renamed','Gloves',3,'consumable')`, [consumable])
+    assert.equal((await call('select qr_value from public.shelves where id=$1', [consumable])).rows[0].qr_value, originalQR)
+    await call(`select public.inventory_stock_move($1,'out',2,'Issued to laboratory class')`, [consumable])
+    assert.equal(Number((await call('select count(*) from public.inventory_units where shelf_id=$1 and retired_at is null', [consumable])).rows[0].count), 1)
+    await assert.rejects(call(`select public.inventory_save_qr_shelf($1,'C-02','Gloves','Gloves',3,'invalid')`, [consumable]), /Choose equipment or consumable/)
     await db.exec('reset role; set role anon')
     await assert.rejects(receive(1),/permission denied/)
+    await assert.rejects(call(`select public.inventory_save_qr_shelf(null,'X','X','X',2,'equipment')`), /permission denied/)
   } finally { await db.close() }
 })

@@ -15,6 +15,7 @@ export async function loadInventoryUnits(client, shelfId) {
 export async function inventoryMigrationRequired(client) {
   const checks = await Promise.all([
     client.from('shelves').select('low_stock_threshold').limit(0),
+    client.from('shelves').select('inventory_kind').limit(0),
     client.from('inventory_units').select('retired_at').limit(0),
     client.from('stock_movements').select('id').limit(0),
   ])

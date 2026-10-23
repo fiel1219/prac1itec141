@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { loadInventoryUnits, inventoryMigrationRequired } from './inventoryData'
+import { resolveInventoryQR } from './inventoryQR'
 
 const url = import.meta.env.VITE_SUPABASE_URL
 const key = import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -33,13 +34,9 @@ export async function fetchBorrowers() {
   return supabase.from('borrowers').select('*').order('name')
 }
 
-export async function fetchShelfByQR(code) {
+export async function fetchInventoryByQR(code) {
   if (!supabase) return { data: null, error: new Error('Supabase is not configured') }
-  const { data: shelf, error } = await supabase.from('shelves').select('*').eq('qr_value',code.trim()).eq('status','active').maybeSingle()
-  if (error || !shelf) return { data: shelf, error }
-  const { data: units, error: failure } = await loadInventoryUnits(supabase, shelf.id)
-  if (failure) return { data: null, error: failure }
-  return { data: { ...shelf, inventory_units: units }, error: null }
+  return resolveInventoryQR(supabase, code)
 }
 
 export async function fetchTransactions() {
