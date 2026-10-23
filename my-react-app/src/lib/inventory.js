@@ -5,6 +5,10 @@ export const availableUnits = shelf => activeUnits(shelf).filter(unit => unit.st
 export const recordQuantity = (unit, shelf) => itemKind(unit, shelf) === 'consumable' ? Number(unit.quantity ?? 1) : 1
 export const stockQuantity = shelf => activeUnits(shelf).reduce((total,unit) => total + recordQuantity(unit,shelf),0)
 export const availableQuantity = shelf => availableUnits(shelf).reduce((total,unit) => total + recordQuantity(unit,shelf),0)
+export const inventoryCategoryTotals = shelf => activeUnits(shelf).reduce((totals,unit) => {
+  totals[itemKind(unit,shelf) === 'consumable' ? 'consumables' : 'equipment'] += recordQuantity(unit,shelf)
+  return totals
+}, { equipment:0, consumables:0 })
 export const itemLabel = (unit, shelf) => `${itemKind(unit,shelf) === 'consumable' ? 'Consumable' : 'Equipment'} ${String(itemKind(unit,shelf) === 'consumable' ? unit.consumable_number ?? unit.unit_number : unit.unit_number).padStart(3,'0')}`
 export const isLowStock = shelf => availableQuantity(shelf) <= Number(shelf.low_stock_threshold ?? 2)
 export const itemName = (unit, shelf) => unit?.item_name?.trim() || shelf?.item_type?.trim() || 'Item'

@@ -10,10 +10,13 @@ function Message({ error, success }) {
 
 const emptyShelf = { code: '', name: '', description: '' }
 
-async function saveShelf(id, form) {
-  const response = await supabase.rpc('inventory_save_shelf_details', { p_id: id, p_code: form.code, p_name: form.name, p_description: (form.description || '').trim() })
+async function saveShelf(id, form, laboratoryId) {
+  const args = { p_id: id, p_code: form.code, p_name: form.name, p_description: (form.description || '').trim() }
+  const response = laboratoryId
+    ? await supabase.rpc('inventory_save_laboratory_shelf',{ ...args,p_laboratory_id:laboratoryId })
+    : await supabase.rpc('inventory_save_shelf_details',args)
   if (response.error?.code === 'PGRST202') return { ...response, error: { ...response.error,
-    message: 'Run supabase/inventory_item_categories.sql after the previous migrations to save shelf descriptions.' } }
+    message: 'Shelf descriptions need a system update. Please contact an administrator.' } }
   return response
 }
 
@@ -26,7 +29,7 @@ function ShelfForm({ form, setForm, onSubmit, onCancel, busy, title }) {
   </form>
 }
 
-export function AddShelfDialog({ onClose, onSaved }) {
+export function AddShelfDialog({ onClose, onSaved, laboratoryId }) {
   const [form, setForm] = useState(emptyShelf), [busy, setBusy] = useState(false), [error, setError] = useState('')
   useEffect(() => {
     const escape = event => { if (event.key === 'Escape' && !busy) onClose() }
@@ -39,7 +42,7 @@ export function AddShelfDialog({ onClose, onSaved }) {
     if (busy) return
     setBusy(true); setError('')
     try {
-      const { data, error: failure } = await saveShelf(null, form)
+      const { data, error: failure } = await saveShelf(null, form, laboratoryId)
       if (failure) throw failure
       await onSaved(data)
     } catch (failure) { setError(failure.message) }
@@ -53,7 +56,7 @@ export function AddShelfDialog({ onClose, onSaved }) {
   </div></div>
 }
 
-export function ItemManagement({ shelves, onChange, onQR, onUnitQR, permanentDeleteRequired = false }) {
+export function ItemManagement({ shelves, onChange, onQR, onUnitQR, permanentDeleteRequired = false, laboratoryId }) {
   const [editing, setEditing] = useState(null), [form, setForm] = useState(emptyShelf)
   const [selectedId, setSelectedId] = useState(''), [query, setQuery] = useState('')
   const [unit, setUnit] = useState(null), [error, setError] = useState(''), [success, setSuccess] = useState(''), [busy, setBusy] = useState(false)
@@ -69,7 +72,7 @@ export function ItemManagement({ shelves, onChange, onQR, onUnitQR, permanentDel
   function edit(shelf) { setForm(shelf || emptyShelf); setEditing(shelf?.id || 'new'); setError(''); setSuccess('') }
   function save(event) {
     event.preventDefault()
-    run(() => saveShelf(editing === 'new' ? null : editing, form), 'Shelf saved. Open its QR labels and choose Add items to receive stock.')
+    run(() => saveShelf(editing === 'new' ? null : editing, form, laboratoryId), 'Shelf saved. Open its QR labels and choose Add items to receive stock.')
   }
   function removeShelf(shelf) {
     if (busy || permanentDeleteRequired || stockQuantity(shelf) > 0) return
@@ -87,7 +90,7 @@ export function ItemManagement({ shelves, onChange, onQR, onUnitQR, permanentDel
   </section>
 }
 
-export function StockMovements({ shelves, onChange, itemNamesRequired = false, itemCategoriesRequired = false }) {
+export function StockMovements({ shelves, onChange, itemNamesRequired = false, itemCategoriesRequired = false, laboratoryId }) {
   const [shelfId, setShelfId] = useState(''), [direction, setDirection] = useState('in'), [quantity, setQuantity] = useState(1), [notes, setNotes] = useState('')
   const [stockItem, setStockItem] = useState('')
   const [stockKind, setStockKind] = useState('equipment')
@@ -119,18 +122,18 @@ export function StockMovements({ shelves, onChange, itemNamesRequired = false, i
     <label>Quantity<input type="number" required disabled={busy} min="1" max={direction === 'out' ? Math.min(1000, available) : 1000} step="1" value={quantity} onChange={event => setQuantity(event.target.value)}/></label>
     <label>{direction === 'out' ? 'Removal reason (required)' : 'Receipt notes'}<textarea disabled={busy} required={direction === 'out'} maxLength={1000} value={notes} onChange={event => setNotes(event.target.value)}/></label>
     {shelf && direction === 'out' && <p>{available} available units of the selected item.</p>}<button className="primary" disabled={busy || itemNamesRequired || itemCategoriesRequired || !shelf || (direction === 'out' && !available)}>{busy ? 'Saving…' : 'Record movement'}</button>
-  </form></section><MovementReport key={revision} shelves={shelves} title="Stock movement history"/></>
+  </form></section><MovementReport key={revision} laboratoryId={laboratoryId} shelves={shelves} title="Stock movement history"/></>
 }
 
-export function Reports({ shelves }) {
+export function Reports({ shelves, laboratoryId }) {
   const [query, setQuery] = useState(''), [onlyLow, setOnlyLow] = useState(false)
   const summary = inventorySummary(shelves).filter(row => `${row.code} ${row.name} ${row.item_type}`.toLowerCase().includes(query.toLowerCase()) && (!onlyLow || row.low_stock === 'Yes'))
   const fields = ['code','name','item_type','category','total','available','borrowed','damaged','maintenance','missing','threshold','low_stock']
   const headers = ['Code','Name','Item type','Category','Total','Available','Borrowed','Damaged','Maintenance','Missing / not found','Threshold','Low stock']
-  return <><section className="card inventory-feature"><div className="cardhead"><div><h2>Inventory summary</h2><p>Current active inventory. Damaged and maintenance counts may overlap.</p></div><button className="primary" onClick={() => downloadCsv('inventoscan-inventory.csv',headers,summary.map(row => fields.map(field => row[field])))}>Export summary CSV</button></div><div className="inventory-filters"><label>Search<input value={query} onChange={event => setQuery(event.target.value)} placeholder="Shelf or item type"/></label><label className="inventory-checkbox"><input type="checkbox" checked={onlyLow} onChange={event => setOnlyLow(event.target.checked)}/>Low stock only</label></div><div className="inventory-table"><table><thead><tr>{headers.map(header => <th key={header}>{header}</th>)}</tr></thead><tbody>{summary.map(row => <tr key={`${row.code}:${row.inventory_kind}:${row.item_type}`}>{fields.map(field => <td key={field}>{row[field]}</td>)}</tr>)}</tbody></table></div>{!summary.length && <p className="empty">No inventory matches these filters.</p>}</section><MovementReport shelves={shelves}/></>
+  return <><section className="card inventory-feature"><div className="cardhead"><div><h2>Inventory summary</h2><p>Current active inventory. Damaged and maintenance counts may overlap.</p></div><button className="primary" onClick={() => downloadCsv('inventoscan-inventory.csv',headers,summary.map(row => fields.map(field => row[field])))}>Export summary CSV</button></div><div className="inventory-filters"><label>Search<input value={query} onChange={event => setQuery(event.target.value)} placeholder="Shelf or item type"/></label><label className="inventory-checkbox"><input type="checkbox" checked={onlyLow} onChange={event => setOnlyLow(event.target.checked)}/>Low stock only</label></div><div className="inventory-table"><table><thead><tr>{headers.map(header => <th key={header}>{header}</th>)}</tr></thead><tbody>{summary.map(row => <tr key={`${row.code}:${row.inventory_kind}:${row.item_type}`}>{fields.map(field => <td key={field}>{row[field]}</td>)}</tr>)}</tbody></table></div>{!summary.length && <p className="empty">No inventory matches these filters.</p>}</section><MovementReport laboratoryId={laboratoryId} shelves={shelves}/></>
 }
 
-function MovementReport({ shelves, title = 'Stock movement report' }) {
+function MovementReport({ shelves, title = 'Stock movement report', laboratoryId }) {
   const [rows, setRows] = useState([]), [error, setError] = useState(''), [loading, setLoading] = useState(true)
   const [from, setFrom] = useState(''), [to, setTo] = useState(''), [shelfId, setShelfId] = useState(''), [direction, setDirection] = useState('all')
   const [reload, setReload] = useState(0)
@@ -143,6 +146,7 @@ function MovementReport({ shelves, title = 'Stock movement report' }) {
         const records = []
         for (let offset = 0; ; offset += 500) {
           let request = supabase.from('stock_movements').select('*, shelves(code,name), inventory_units(unit_number)').order('created_at', { ascending: false }).order('id').range(offset,offset+499)
+          if (laboratoryId) request = request.eq('laboratory_id',laboratoryId)
           if (shelfId) request = request.eq('shelf_id',shelfId)
           if (direction !== 'all') request = request.eq('direction',direction)
           if (from) request = request.gte('created_at',new Date(`${from}T00:00:00`).toISOString())
@@ -157,7 +161,7 @@ function MovementReport({ shelves, title = 'Stock movement report' }) {
       } catch (failure) { if (!cancelled) setError(failure.message) } finally { if (!cancelled) setLoading(false) }
     }
     load(); return () => { cancelled = true }
-  }, [from,to,shelfId,direction,reload])
+  }, [from,to,shelfId,direction,reload,laboratoryId])
   const headers = ['Date','Shelf','Item','Category','Unit','Direction','Reason','Quantity','Operator','Notes']
   const values = row => [new Date(row.created_at).toLocaleString(),row.shelf_code || row.shelves?.code || '',row.item_type || '',row.inventory_kind || '',row.unit_number ?? row.inventory_units?.unit_number,row.direction,row.reason,row.quantity,row.actor,row.notes || '']
   return <section className="card inventory-feature"><div className="cardhead"><div><h2>{title}</h2><p>{loading ? 'Loading movements…' : `${rows.length} unit movements`}</p></div><div className="inventory-buttons"><button className="secondary" disabled={loading} onClick={() => setReload(value => value+1)}>Refresh</button><button className="primary" disabled={loading || !!error || !rows.length} onClick={() => downloadCsv('inventoscan-movements.csv',headers,rows.map(values))}>Export movements CSV</button></div></div><div className="inventory-filters"><label>From<input type="date" value={from} onChange={event => setFrom(event.target.value)}/></label><label>Through<input type="date" value={to} onChange={event => setTo(event.target.value)}/></label><label>Shelf<select value={shelfId} onChange={event => setShelfId(event.target.value)}><option value="">All shelf history</option>{shelves.map(shelf => <option key={shelf.id} value={shelf.id}>{shelf.code}</option>)}</select></label><label>Direction<select value={direction} onChange={event => setDirection(event.target.value)}><option value="all">All</option><option value="in">In</option><option value="out">Out</option><option value="adjustment">Adjustment</option></select></label></div><Message error={error}/>{!loading && !error && <><p className="inventory-totals">Stock-in: {rows.filter(row => row.direction==='in').reduce((sum,row) => sum+Number(row.quantity),0)} · Stock-out: {rows.filter(row => row.direction==='out').reduce((sum,row) => sum+Number(row.quantity),0)} · Adjustments: {rows.filter(row => row.direction==='adjustment').length}</p><div className="inventory-table"><table><thead><tr>{headers.map(header => <th key={header}>{header}</th>)}</tr></thead><tbody>{rows.map(row => <tr key={row.id}>{values(row).map((value,index) => <td key={index}>{value}</td>)}</tr>)}</tbody></table></div>{!rows.length && <p className="empty">No movements match these filters. Recording starts when the inventory migration is applied.</p>}</>}</section>

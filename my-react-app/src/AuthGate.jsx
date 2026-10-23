@@ -10,7 +10,7 @@ const demoAccounts = [
 
 export default function AuthGate() {
   const [session, setSession] = useState(null)
-  const [error, setError] = useState(supabase ? '' : 'Supabase is not configured')
+  const [error, setError] = useState(supabase ? '' : 'Connection setup required. Please contact an administrator.')
   const [loading, setLoading] = useState(Boolean(supabase))
   const [signingIn, setSigningIn] = useState(false)
   const [registering, setRegistering] = useState(false)
@@ -45,7 +45,7 @@ export default function AuthGate() {
   async function signIn(credentials, demo = false) {
     if (signingIn) return
     setError('')
-    if (!supabase) { setError('Supabase is not configured'); return }
+    if (!supabase) { setError('Connection setup required. Please contact an administrator.'); return }
     setSigningIn(true)
     try {
       const { data, error: failure } = await supabase.auth.signInWithPassword(credentials)
@@ -54,14 +54,14 @@ export default function AuthGate() {
       await check(data.session)
     } catch (failure) {
       setError(demo && failure.code === 'invalid_credentials'
-        ? 'Demo account is not ready. Run supabase/demo_accounts.sql in the Supabase SQL Editor, then try again.'
+        ? 'Demo account is not ready. Ask an administrator to enable demo access, then try again.'
         : failure.message)
     } finally { setSigningIn(false) }
   }
 
   async function register(event) {
     event.preventDefault(); setError('')
-    if (!supabase) { setError('Supabase is not configured'); return }
+    if (!supabase) { setError('Connection setup required. Please contact an administrator.'); return }
     setSigningIn(true)
     try {
       const { data, error: signupError } = await supabase.auth.signUp({ email, password })

@@ -125,7 +125,7 @@ export function InventoryLabels({ shelf, shelves = [], close, onChange, migratio
       await onChange()
     } catch (failure) {
       setUnitError(failure.code === 'PGRST202'
-        ? 'Run supabase/inventory_bulk_actions.sql after inventory_consumable_actions.sql, then try again.'
+        ? 'Multiple-item actions need a system update. Please contact an administrator.'
         : failure.message)
     } finally { setSavingUnit(false) }
   }
@@ -151,7 +151,7 @@ export function InventoryLabels({ shelf, shelves = [], close, onChange, migratio
       await onChange()
     } catch (failure) {
       setUnitError(failure.code === 'PGRST202'
-        ? 'Run supabase/inventory_consumable_actions.sql after inventory_consumable_quantities.sql, then try again.'
+        ? 'Consumable actions need a system update. Please contact an administrator.'
         : failure.message)
     } finally { setSavingUnit(false) }
   }
@@ -170,7 +170,7 @@ export function InventoryLabels({ shelf, shelves = [], close, onChange, migratio
       setSuccess(`${count} ${stockItem.trim()} item(s) added to ${shelf.name}.`)
       await onChange()
     } catch (failure) { setStockError(failure.code === 'PGRST202'
-      ? 'Run supabase/inventory_consumable_quantities.sql after the previous migrations, then try again.'
+      ? 'Stock tracking needs a system update. Please contact an administrator.'
       : failure.message) }
     finally { setSavingStock(false) }
   }
@@ -221,7 +221,7 @@ export function InventoryLabels({ shelf, shelves = [], close, onChange, migratio
       await onChange()
     } catch (failure) {
       setUnitError(failure.code === 'PGRST202' && action.type === 'return'
-        ? 'Return status repair needs database setup. Run supabase/inventory_return_repair.sql in Supabase SQL Editor, then try again.'
+        ? 'Return status correction needs a system update. Please contact an administrator.'
         : failure.message)
     }
     finally { setSavingUnit(false) }
@@ -333,7 +333,7 @@ export function InventoryLabels({ shelf, shelves = [], close, onChange, migratio
   </div></div>
 }
 
-export function InventoryScanner({ onChange, migrationRequired, itemNamesRequired = false, itemCategoriesRequired = false }) {
+export function InventoryScanner({ onChange, migrationRequired, itemNamesRequired = false, itemCategoriesRequired = false, laboratoryId }) {
   const [value, setValue] = useState(''), [result, setResult] = useState(null)
   const [error, setError] = useState(''), [done, setDone] = useState('')
   const [busy, setBusy] = useState(false), [loading, setLoading] = useState(false), [scanning, setScanning] = useState(false)
@@ -365,6 +365,7 @@ export function InventoryScanner({ onChange, migrationRequired, itemNamesRequire
       if (version !== lookupVersion.current) return
       if (response.error) throw response.error
       const data = response.data
+      if (laboratoryId && data.laboratory_id !== laboratoryId) throw new Error('This item belongs to another laboratory. Choose its laboratory before scanning it.')
       if (data.qr_kind === 'consumable') {
         const items = shelfItems(data)
         if (items.length === 1) setIssueItem(items[0].name)
