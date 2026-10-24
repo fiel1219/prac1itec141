@@ -8,8 +8,25 @@ import { LaboratorySelector, LaboratoryManager } from './Laboratories'
 import { storedLaboratory, rememberLaboratory } from './lib/laboratories'
 import Users from './Users'
 import { loadUserLaboratories, userRoleLabel } from './lib/userLaboratories'
+import InventoryChecks from './InventoryChecks'
+import { canCheckInventory } from './lib/inventoryChecks'
 
-const nav = ['Dashboard','Scan QR','Shelves','Items','Returns','Transaction History','Inventory Checks','Reports']
+const navSections = [
+  { title: 'Overview', items: [{ page: 'Dashboard', icon: '⌂' }] },
+  { title: 'Inventory', items: [
+    { page: 'Shelves', icon: '▥' },
+    { page: 'Items', label: 'Equipment and Consumables', icon: '▦' },
+    { page: 'Inventory Checks', icon: '▥' },
+  ] },
+  { title: 'Daily Operations', items: [
+    { page: 'Scan QR', icon: '▤' },
+    { page: 'Returns', icon: '↔' },
+  ] },
+  { title: 'Records & Reports', items: [
+    { page: 'Transaction History', icon: '✓' },
+    { page: 'Reports', icon: '▧' },
+  ] },
+]
 const admin = ['Users','Admin Approvals']
 const Badge = ({children,tone=''}) => <span className={'badge '+tone}>{children}</span>
 
@@ -57,8 +74,9 @@ export default function App() {
   useEffect(() => { rememberLaboratory(laboratoryId) }, [laboratoryId])
   useEffect(() => {
     Promise.resolve().then(refreshInventory)
-    const timer = setInterval(refreshInventory, 30000)
-    const refresh = () => { if (document.visibilityState === 'visible') refreshInventory() }
+    const refreshAccountAndInventory = () => { refreshInventory(); setAccountVersion(value=>value+1) }
+    const timer = setInterval(refreshAccountAndInventory, 30000)
+    const refresh = () => { if (document.visibilityState === 'visible') refreshAccountAndInventory() }
     document.addEventListener('visibilitychange', refresh)
     return () => { clearInterval(timer); document.removeEventListener('visibilitychange', refresh) }
   }, [])
@@ -66,9 +84,9 @@ export default function App() {
     let active = true
     supabase?.auth.getUser().then(async ({ data }) => {
       if (!data.user) return
-      const { data: account, error: accountError } = await supabase.from('user_accounts').select('id,full_name,email,role').eq('email', data.user.email).maybeSingle()
+      const { data: account, error: accountError } = await supabase.from('user_accounts').select('id,full_name,email,role,status').eq('email', data.user.email).maybeSingle()
       if (!active) return
-      if (accountError) { setAssignmentError(accountError.message); return }
+      if (accountError) { setAssignmentError(accountError.message); setUserAssignments([]); return }
       setCurrentUser(account || { full_name: data.user.user_metadata?.full_name || 'User', email: data.user.email, role: 'Operator' })
       if (account?.role !== 'Admin') setPage(previous => admin.includes(previous) ? 'Dashboard' : previous)
       if (account?.id) {
@@ -76,13 +94,14 @@ export default function App() {
         if (!active) return
         setUserAssignments(result.data || []); setAssignmentError(result.error?.message || '')
       }
-    }).catch(failure => { if (active) setAssignmentError(failure.message) })
+    }).catch(failure => { if (active) { setAssignmentError(failure.message); setUserAssignments([]) } })
     return () => { active = false }
   }, [accountVersion])
   const selectedLaboratory = laboratories.find(lab => lab.id === laboratoryId)
   const scopedLaboratoryId = laboratorySetupRequired ? null : selectedLaboratory?.id || null
   const dbShelves = useMemo(() => laboratorySetupRequired ? allShelves : allShelves.filter(shelf => shelf.laboratory_id === laboratoryId), [allShelves,laboratoryId,laboratorySetupRequired])
   const canManageInventory = laboratorySetupRequired || !!selectedLaboratory
+  const canInspect = !laboratorySetupRequired && canCheckInventory(currentUser,userAssignments,scopedLaboratoryId)
   const shelves = useMemo(() => dbShelves.filter(s => (s.code+' '+s.name+' '+shelfItems(s).map(item => item.name).join(' ')).toLowerCase().includes(query.toLowerCase())), [dbShelves,query])
   const inventoryTotals = dbShelves.reduce((totals,shelf) => {
     const shelfTotals = inventoryCategoryTotals(shelf)
@@ -90,11 +109,16 @@ export default function App() {
     totals.consumables += shelfTotals.consumables
     return totals
   }, { equipment:0, consumables:0 })
-  const go = name => { setPage(name); setMobile(false) }
+  const go = name => { if (name==='Inventory Checks' && !canInspect) return; setPage(name); setMobile(false) }
   const compactPage = ['Shelves','Returns','Transaction History','Inventory Checks','Reports'].includes(page)
   const hidePageHeader = compactPage || page === 'Items'
   return <div className="app"><MainBrand currentUser={currentUser} />
-    <aside className={mobile ? 'side open' : 'side'}><div className="brand"><b>⌁</b><span><strong>VSU InventoScan</strong><small>Inventory system</small></span></div><div className="sidebar-user"><div className="user-avatar">{(currentUser?.full_name || 'U').charAt(0).toUpperCase()}</div><div><b>{currentUser?.full_name || 'Loading user...'}</b><small>{currentUser?.email || ''}</small><span>{currentUser ? userRoleLabel(currentUser,userAssignments,laboratoryId) : 'Loading role…'}{currentUser?.role !== 'Admin' && userAssignments.some(row=>row.user_id===currentUser?.id && row.laboratory_id===laboratoryId) && selectedLaboratory && ` · ${selectedLaboratory.name}`}</span></div></div><div className="sidebar-navigation"><LaboratorySelector laboratories={laboratories} selectedId={laboratoryId} loading={loading} onManage={()=>setManagingLaboratories(true)} onSelect={selectLaboratory}/><label>MAIN MENU</label><nav>{nav.map((n,i)=><button className={page===n?'active':''} onClick={()=>go(n)} key={n}>{['⌂','▤','▥','▦','↔','✓','▥','▧'][i]} {n==='Items' ? 'Equipment and Consumables' : n}</button>)}</nav>{currentUser?.role === 'Admin' && <><label>ADMINISTRATION</label><nav>{admin.map(n=><button className={page===n?'active':''} onClick={()=>go(n)} key={n}>⚙ {n}</button>)}</nav></>}</div><nav className="sidebar-footer" aria-label="Account"><button type="button" onClick={()=>supabase?.auth.signOut()}><span aria-hidden="true">↪</span> Log out</button></nav></aside>
+    <aside className={mobile ? 'side open' : 'side'}><div className="brand"><b>⌁</b><span><strong>VSU InventoScan</strong><small>Inventory system</small></span></div><div className="sidebar-user"><div className="user-avatar">{(currentUser?.full_name || 'U').charAt(0).toUpperCase()}</div><div><b>{currentUser?.full_name || 'Loading user...'}</b><small>{currentUser?.email || ''}</small><span>{currentUser ? userRoleLabel(currentUser,userAssignments,laboratoryId) : 'Loading role…'}{currentUser?.role !== 'Admin' && userAssignments.some(row=>row.user_id===currentUser?.id && row.laboratory_id===laboratoryId) && selectedLaboratory && ` · ${selectedLaboratory.name}`}</span></div></div><div className="sidebar-navigation"><LaboratorySelector laboratories={laboratories} selectedId={laboratoryId} loading={loading} onManage={()=>setManagingLaboratories(true)} onSelect={selectLaboratory}/>{[...navSections, ...(currentUser?.role === 'Admin' ? [{ title: 'Administration', items: admin.map(page => ({ page, icon: '⚙' })) }] : [])].map(section =>
+      <section className="sidebar-section" key={section.title} aria-label={section.title}>
+        <h2 className="sidebar-section-title">{section.title}</h2>
+        <nav aria-label={section.title}>{section.items.filter(item=>item.page!=='Inventory Checks'||canInspect).map(item => <button type="button" className={page===item.page?'active':''} aria-current={page===item.page?'page':undefined} onClick={()=>go(item.page)} key={item.page}><span aria-hidden="true">{item.icon}</span> {item.label || item.page}</button>)}</nav>
+      </section>
+    )}</div><nav className="sidebar-footer" aria-label="Account"><button type="button" onClick={()=>supabase?.auth.signOut()}><span aria-hidden="true">↪</span> Log out</button></nav></aside>
     {managingLaboratories && <LaboratoryManager laboratories={laboratories} shelves={allShelves} setupRequired={laboratorySetupRequired} onClose={()=>setManagingLaboratories(false)} onChange={async preferredId=>{if(!await refreshInventory(preferredId))throw new Error('Changes were saved, but inventory could not be refreshed. Refresh the page.')}}/>}
     <main key={laboratoryId || 'no-laboratory'} className={compactPage ? 'compact-page' : undefined}><header className={hidePageHeader ? 'inventory-page-header' : undefined}><button className="mobile" onClick={()=>setMobile(!mobile)}>☰</button>{!hidePageHeader && <div><h1>{page}</h1><p>{isSupabaseConfigured ? selectedLaboratory?.name || 'Laboratory inventory' : 'Connection setup required'}</p></div>}{!hidePageHeader && <div className="head"><span>{isSupabaseConfigured?'Connected':'Not connected'}</span></div>}</header>
     {assignmentError && <div role="alert" className="connection-error">Could not load account assignments: {assignmentError}</div>}
@@ -108,6 +132,9 @@ export default function App() {
     {!migrationRequired && !itemNamesRequired && itemCategoriesRequired && !loading && <section className="card inventory-alerts" role="status"><h2>Consumable stock update required</h2><p>Ask an administrator to update consumable stock tracking before adding or issuing quantities.</p></section>}
     {page==='Dashboard' && <section className="stats">{[['Shelves',dbShelves.length,'Total shelves','▥'],['Equipments',inventoryTotals.equipment,'Total equipment','▤'],['Consumables',inventoryTotals.consumables,'Total quantity','▦']].map((x,i)=><div className="stat" key={x[0]}><i className={'c'+i}>{x[3]}</i><small>{x[0]}</small><strong>{loading?'…':x[1]}</strong><em>{x[2]}</em></div>)}</section>}
     {page==='Users' && currentUser?.role==='Admin' && <Users laboratories={laboratories} laboratorySetupRequired={laboratorySetupRequired} onAccountChange={()=>setAccountVersion(value=>value+1)}/>}
+    {page==='Inventory Checks' && (canInspect
+      ? <InventoryChecks laboratoryId={scopedLaboratoryId} shelves={dbShelves} onChange={refreshInventory} inventoryLoading={loading} inventoryError={error} setupRequired={migrationRequired || itemNamesRequired || itemCategoriesRequired}/>
+      : <section className="card page"><h2>Inventory Checks</h2><p>Only assigned Laboratory Admins and Laboratory Operators can check inventory in this laboratory.</p></section>)}
     {page==='Items' && canManageInventory && !migrationRequired && <ItemManagement shelves={dbShelves} onChange={refreshInventory} onQR={setSelectedShelf} onUnitQR={(shelf, unit) => setSelectedShelf({ ...shelf, qrUnit: unit })}/>}
     {page==='Stock Movements' && canManageInventory && !migrationRequired && <StockMovements laboratoryId={scopedLaboratoryId} shelves={dbShelves} onChange={refreshInventory} itemNamesRequired={itemNamesRequired} itemCategoriesRequired={itemCategoriesRequired}/>}
     {page==='Reports' && canManageInventory && !loading && !error && !migrationRequired && <Reports shelves={dbShelves}/>}
@@ -128,7 +155,7 @@ export default function App() {
     </section>}
     {addingShelf && canManageInventory && <AddShelfDialog laboratoryId={scopedLaboratoryId} onClose={()=>setAddingShelf(false)} onSaved={async()=>{ setQuery(''); await refreshInventory(); setAddingShelf(false) }}/>}
     {selectedShelf && dbShelves.some(shelf=>shelf.id===selectedShelf.id) && <InventoryLabels key={selectedShelf.id + (selectedShelf.qrUnit?.id || (selectedShelf.qrConsumables ? 'consumables' : ''))} shelf={{ ...(dbShelves.find(shelf => shelf.id === selectedShelf.id) || selectedShelf), qrUnit: selectedShelf.qrUnit, qrConsumables:selectedShelf.qrConsumables }} shelves={dbShelves} close={()=>setSelectedShelf(null)} onChange={refreshInventory} migrationRequired={migrationRequired} unitActionsRequired={unitActionsRequired} permanentDeleteRequired={permanentDeleteRequired} itemNamesRequired={itemNamesRequired} itemCategoriesRequired={itemCategoriesRequired} />}
-    {(canManageInventory || !['Returns','Transaction History','Inventory Checks'].includes(page)) && !['Dashboard','Scan QR','Shelves','Inventory','Items','Stock Movements','Reports','Users'].includes(page)&&<DatabaseTable key={`${page}:${laboratoryId}`} laboratoryId={scopedLaboratoryId} page={page} onChange={refreshInventory} migrationRequired={migrationRequired} shelves={dbShelves} onOpenShelf={setSelectedShelf}/>}
+    {(canManageInventory || !['Returns','Transaction History','Inventory Checks'].includes(page)) && !['Dashboard','Scan QR','Shelves','Inventory','Items','Stock Movements','Reports','Users','Inventory Checks'].includes(page)&&<DatabaseTable key={`${page}:${laboratoryId}`} laboratoryId={scopedLaboratoryId} page={page} onChange={refreshInventory} migrationRequired={migrationRequired} shelves={dbShelves} onOpenShelf={setSelectedShelf}/>}
     </main></div>
 }
 

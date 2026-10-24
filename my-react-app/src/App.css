@@ -33,3 +33,4 @@
 .history-controls{display:flex;align-items:center;gap:12px}.history-controls select{border:1px solid #dce1eb;border-radius:7px;background:#fff;padding:8px 28px 8px 10px;color:#59647c;font-size:12px}
 .card.page:has(table){overflow-x:auto}.card.page:has(table) table{min-width:1050px}.card.page:has(table) th,.card.page:has(table) td{white-space:nowrap}
 @media(max-width:700px){.app>main{padding-top:90px}}
+.sidebar-section+.sidebar-section{margin-top:20px}.sidebar-section-title{margin:0 12px 8px;font-size:10px;line-height:1.4;color:#a2a6b6;letter-spacing:.08em;font-weight:700;text-transform:uppercase}.sidebar-section nav{margin-bottom:0}
