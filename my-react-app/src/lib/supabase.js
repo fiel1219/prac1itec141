@@ -61,7 +61,13 @@ export async function fetchAdmins() {
 
 export async function fetchUsers() {
   if (!supabase) return { data: null, error: new Error('Connection setup required. Please contact an administrator.') }
-  return supabase.from('user_accounts').select('*').order('full_name')
+  const users = []
+  for (let offset = 0; ; offset += 500) {
+    const { data, error } = await supabase.from('user_accounts').select('*').order('full_name').order('id').range(offset, offset + 499)
+    if (error) return { data: null, error }
+    users.push(...data)
+    if (data.length < 500) return { data: users, error: null }
+  }
 }
 
 export async function fetchApprovals() {

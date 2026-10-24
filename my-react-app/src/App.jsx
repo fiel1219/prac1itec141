@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import './App.css'
-import { fetchShelves, fetchLaboratories, fetchBorrowers, fetchTransactions, fetchUsers, fetchApprovals, isSupabaseConfigured, supabase } from './lib/supabase'
+import { fetchShelves, fetchLaboratories, fetchBorrowers, fetchTransactions, fetchApprovals, isSupabaseConfigured, supabase } from './lib/supabase'
 import { InventoryLabels, InventoryScanner } from './InventoryQR'
 import { AddShelfDialog, ItemManagement, StockMovements, Reports } from './InventoryFeatures'
 import { activeUnits, shelfItems, stockQuantity, availableQuantity, inventoryCategoryTotals } from './lib/inventory'
 import { LaboratorySelector, LaboratoryManager } from './Laboratories'
 import { storedLaboratory, rememberLaboratory } from './lib/laboratories'
+import Users from './Users'
+import { loadUserLaboratories, userRoleLabel } from './lib/userLaboratories'
 
 const nav = ['Dashboard','Scan QR','Shelves','Items','Returns','Transaction History','Inventory Checks','Reports']
 const admin = ['Users','Admin Approvals']
@@ -23,6 +25,8 @@ export default function App() {
   const [loading,setLoading] = useState(true)
   const [error,setError] = useState('')
   const [currentUser,setCurrentUser] = useState(null)
+  const [userAssignments,setUserAssignments] = useState([]), [accountVersion,setAccountVersion] = useState(0)
+  const [assignmentError,setAssignmentError] = useState('')
   const [selectedShelf,setSelectedShelf] = useState(null)
   const [addingShelf,setAddingShelf] = useState(false)
   const [migrationRequired,setMigrationRequired] = useState(false)
@@ -58,7 +62,23 @@ export default function App() {
     document.addEventListener('visibilitychange', refresh)
     return () => { clearInterval(timer); document.removeEventListener('visibilitychange', refresh) }
   }, [])
-  useEffect(() => { supabase?.auth.getUser().then(async ({ data }) => { if (!data.user) return; const { data: account } = await supabase.from('user_accounts').select('full_name,email,role').eq('email', data.user.email).maybeSingle(); setCurrentUser(account || { full_name: data.user.user_metadata?.full_name || 'User', email: data.user.email, role: 'Operator' }) }) }, [])
+  useEffect(() => {
+    let active = true
+    supabase?.auth.getUser().then(async ({ data }) => {
+      if (!data.user) return
+      const { data: account, error: accountError } = await supabase.from('user_accounts').select('id,full_name,email,role').eq('email', data.user.email).maybeSingle()
+      if (!active) return
+      if (accountError) { setAssignmentError(accountError.message); return }
+      setCurrentUser(account || { full_name: data.user.user_metadata?.full_name || 'User', email: data.user.email, role: 'Operator' })
+      if (account?.role !== 'Admin') setPage(previous => admin.includes(previous) ? 'Dashboard' : previous)
+      if (account?.id) {
+        const result = await loadUserLaboratories(supabase, account.id)
+        if (!active) return
+        setUserAssignments(result.data || []); setAssignmentError(result.error?.message || '')
+      }
+    }).catch(failure => { if (active) setAssignmentError(failure.message) })
+    return () => { active = false }
+  }, [accountVersion])
   const selectedLaboratory = laboratories.find(lab => lab.id === laboratoryId)
   const scopedLaboratoryId = laboratorySetupRequired ? null : selectedLaboratory?.id || null
   const dbShelves = useMemo(() => laboratorySetupRequired ? allShelves : allShelves.filter(shelf => shelf.laboratory_id === laboratoryId), [allShelves,laboratoryId,laboratorySetupRequired])
@@ -71,10 +91,13 @@ export default function App() {
     return totals
   }, { equipment:0, consumables:0 })
   const go = name => { setPage(name); setMobile(false) }
+  const compactPage = ['Shelves','Returns','Transaction History','Inventory Checks','Reports'].includes(page)
+  const hidePageHeader = compactPage || page === 'Items'
   return <div className="app"><MainBrand currentUser={currentUser} />
-    <aside className={mobile ? 'side open' : 'side'}><div className="brand"><b>⌁</b><span><strong>VSU InventoScan</strong><small>Inventory system</small></span></div><div className="sidebar-user"><div className="user-avatar">{(currentUser?.full_name || 'U').charAt(0).toUpperCase()}</div><div><b>{currentUser?.full_name || 'Loading user...'}</b><small>{currentUser?.email || ''}</small><span>{currentUser?.role || 'Operator'}</span></div></div><div className="sidebar-navigation"><LaboratorySelector laboratories={laboratories} selectedId={laboratoryId} loading={loading} onManage={()=>setManagingLaboratories(true)} onSelect={selectLaboratory}/><label>MAIN MENU</label><nav>{nav.map((n,i)=><button className={page===n?'active':''} onClick={()=>go(n)} key={n}>{['⌂','▤','▥','▦','↔','✓','▥','▧'][i]} {n==='Items' ? 'Equipment and Consumables' : n}</button>)}</nav>{currentUser?.role === 'Admin' && <><label>ADMINISTRATION</label><nav>{admin.map(n=><button className={page===n?'active':''} onClick={()=>go(n)} key={n}>⚙ {n}</button>)}</nav></>}</div><nav className="sidebar-footer" aria-label="Account"><button type="button" onClick={()=>supabase?.auth.signOut()}><span aria-hidden="true">↪</span> Log out</button></nav></aside>
+    <aside className={mobile ? 'side open' : 'side'}><div className="brand"><b>⌁</b><span><strong>VSU InventoScan</strong><small>Inventory system</small></span></div><div className="sidebar-user"><div className="user-avatar">{(currentUser?.full_name || 'U').charAt(0).toUpperCase()}</div><div><b>{currentUser?.full_name || 'Loading user...'}</b><small>{currentUser?.email || ''}</small><span>{currentUser ? userRoleLabel(currentUser,userAssignments,laboratoryId) : 'Loading role…'}{currentUser?.role !== 'Admin' && userAssignments.some(row=>row.user_id===currentUser?.id && row.laboratory_id===laboratoryId) && selectedLaboratory && ` · ${selectedLaboratory.name}`}</span></div></div><div className="sidebar-navigation"><LaboratorySelector laboratories={laboratories} selectedId={laboratoryId} loading={loading} onManage={()=>setManagingLaboratories(true)} onSelect={selectLaboratory}/><label>MAIN MENU</label><nav>{nav.map((n,i)=><button className={page===n?'active':''} onClick={()=>go(n)} key={n}>{['⌂','▤','▥','▦','↔','✓','▥','▧'][i]} {n==='Items' ? 'Equipment and Consumables' : n}</button>)}</nav>{currentUser?.role === 'Admin' && <><label>ADMINISTRATION</label><nav>{admin.map(n=><button className={page===n?'active':''} onClick={()=>go(n)} key={n}>⚙ {n}</button>)}</nav></>}</div><nav className="sidebar-footer" aria-label="Account"><button type="button" onClick={()=>supabase?.auth.signOut()}><span aria-hidden="true">↪</span> Log out</button></nav></aside>
     {managingLaboratories && <LaboratoryManager laboratories={laboratories} shelves={allShelves} setupRequired={laboratorySetupRequired} onClose={()=>setManagingLaboratories(false)} onChange={async preferredId=>{if(!await refreshInventory(preferredId))throw new Error('Changes were saved, but inventory could not be refreshed. Refresh the page.')}}/>}
-    <main key={laboratoryId || 'no-laboratory'} className={page==='Shelves' ? 'shelves-page' : undefined}><header className={['Shelves','Items'].includes(page) ? 'inventory-page-header' : undefined}><button className="mobile" onClick={()=>setMobile(!mobile)}>☰</button>{!['Shelves','Items'].includes(page) && <div><h1>{page}</h1><p>{isSupabaseConfigured ? selectedLaboratory?.name || 'Laboratory inventory' : 'Connection setup required'}</p></div>}{!['Shelves','Items'].includes(page) && <div className="head"><span>{isSupabaseConfigured?'Connected':'Not connected'}</span></div>}</header>
+    <main key={laboratoryId || 'no-laboratory'} className={compactPage ? 'compact-page' : undefined}><header className={hidePageHeader ? 'inventory-page-header' : undefined}><button className="mobile" onClick={()=>setMobile(!mobile)}>☰</button>{!hidePageHeader && <div><h1>{page}</h1><p>{isSupabaseConfigured ? selectedLaboratory?.name || 'Laboratory inventory' : 'Connection setup required'}</p></div>}{!hidePageHeader && <div className="head"><span>{isSupabaseConfigured?'Connected':'Not connected'}</span></div>}</header>
+    {assignmentError && <div role="alert" className="connection-error">Could not load account assignments: {assignmentError}</div>}
     {error && <div className="connection-error"><b>Database connection error:</b> {error}</div>}
     {!loading && !error && !canManageInventory && ['Dashboard','Shelves','Inventory','Items','Scan QR','Stock Movements','Reports','Returns','Transaction History','Inventory Checks'].includes(page) && <section className="card page"><h2>No laboratories yet</h2><p>Add a laboratory to start organizing shelves and inventory.</p><button type="button" className="primary" onClick={()=>setManagingLaboratories(true)}>Add laboratory</button></section>}
 
@@ -84,6 +107,7 @@ export default function App() {
     {!migrationRequired && itemNamesRequired && !loading && <section className="card inventory-alerts" role="status"><h2>Item management update required</h2><p>Ask an administrator to update item management before adding named items or issuing stock by item.</p></section>}
     {!migrationRequired && !itemNamesRequired && itemCategoriesRequired && !loading && <section className="card inventory-alerts" role="status"><h2>Consumable stock update required</h2><p>Ask an administrator to update consumable stock tracking before adding or issuing quantities.</p></section>}
     {page==='Dashboard' && <section className="stats">{[['Shelves',dbShelves.length,'Total shelves','▥'],['Equipments',inventoryTotals.equipment,'Total equipment','▤'],['Consumables',inventoryTotals.consumables,'Total quantity','▦']].map((x,i)=><div className="stat" key={x[0]}><i className={'c'+i}>{x[3]}</i><small>{x[0]}</small><strong>{loading?'…':x[1]}</strong><em>{x[2]}</em></div>)}</section>}
+    {page==='Users' && currentUser?.role==='Admin' && <Users laboratories={laboratories} laboratorySetupRequired={laboratorySetupRequired} onAccountChange={()=>setAccountVersion(value=>value+1)}/>}
     {page==='Items' && canManageInventory && !migrationRequired && <ItemManagement shelves={dbShelves} onChange={refreshInventory} onQR={setSelectedShelf} onUnitQR={(shelf, unit) => setSelectedShelf({ ...shelf, qrUnit: unit })}/>}
     {page==='Stock Movements' && canManageInventory && !migrationRequired && <StockMovements laboratoryId={scopedLaboratoryId} shelves={dbShelves} onChange={refreshInventory} itemNamesRequired={itemNamesRequired} itemCategoriesRequired={itemCategoriesRequired}/>}
     {page==='Reports' && canManageInventory && !loading && !error && !migrationRequired && <Reports shelves={dbShelves}/>}
@@ -104,7 +128,7 @@ export default function App() {
     </section>}
     {addingShelf && canManageInventory && <AddShelfDialog laboratoryId={scopedLaboratoryId} onClose={()=>setAddingShelf(false)} onSaved={async()=>{ setQuery(''); await refreshInventory(); setAddingShelf(false) }}/>}
     {selectedShelf && dbShelves.some(shelf=>shelf.id===selectedShelf.id) && <InventoryLabels key={selectedShelf.id + (selectedShelf.qrUnit?.id || (selectedShelf.qrConsumables ? 'consumables' : ''))} shelf={{ ...(dbShelves.find(shelf => shelf.id === selectedShelf.id) || selectedShelf), qrUnit: selectedShelf.qrUnit, qrConsumables:selectedShelf.qrConsumables }} shelves={dbShelves} close={()=>setSelectedShelf(null)} onChange={refreshInventory} migrationRequired={migrationRequired} unitActionsRequired={unitActionsRequired} permanentDeleteRequired={permanentDeleteRequired} itemNamesRequired={itemNamesRequired} itemCategoriesRequired={itemCategoriesRequired} />}
-    {(canManageInventory || !['Returns','Transaction History','Inventory Checks'].includes(page)) && !['Dashboard','Scan QR','Shelves','Inventory','Items','Stock Movements','Reports'].includes(page)&&<DatabaseTable key={`${page}:${laboratoryId}`} laboratoryId={scopedLaboratoryId} page={page} onChange={refreshInventory} migrationRequired={migrationRequired} shelves={dbShelves} onOpenShelf={setSelectedShelf}/>}
+    {(canManageInventory || !['Returns','Transaction History','Inventory Checks'].includes(page)) && !['Dashboard','Scan QR','Shelves','Inventory','Items','Stock Movements','Reports','Users'].includes(page)&&<DatabaseTable key={`${page}:${laboratoryId}`} laboratoryId={scopedLaboratoryId} page={page} onChange={refreshInventory} migrationRequired={migrationRequired} shelves={dbShelves} onOpenShelf={setSelectedShelf}/>}
     </main></div>
 }
 
@@ -115,11 +139,10 @@ function MainBrand() {
 function DatabaseTable({ page, onChange, migrationRequired, shelves = [], onOpenShelf, laboratoryId }) {
   const [returnBusy, setReturnBusy] = useState(false)
   const [rows, setRows] = useState([]), [loading, setLoading] = useState(true), [error, setError] = useState('')
-  const [roleFilter, setRoleFilter] = useState('All')
   const [transactionFilter, setTransactionFilter] = useState('all')
   const [returning, setReturning] = useState(null), [returnCondition, setReturnCondition] = useState('good')
-  useEffect(() => { const load = page === 'Borrowers' ? fetchBorrowers() : page === 'Returns' || page === 'Transaction History' ? fetchTransactions(page === 'Returns',laboratoryId) : page === 'Users' ? fetchUsers() : page === 'Admin Approvals' ? fetchApprovals() : Promise.resolve({ data: [] }); load.then(({ data, error }) => { if (error) setError(error.message); else setRows(data || []); setLoading(false) }) }, [page,laboratoryId])
-  const isBorrowers = page === 'Borrowers', isReturns = page === 'Returns', isHistory = page === 'Transaction History', isAdmins = page === 'Admins', isUsers = page === 'Users', isApprovals = page === 'Admin Approvals'
+  useEffect(() => { const load = page === 'Borrowers' ? fetchBorrowers() : page === 'Returns' || page === 'Transaction History' ? fetchTransactions(page === 'Returns',laboratoryId) : page === 'Admin Approvals' ? fetchApprovals() : Promise.resolve({ data: [] }); load.then(({ data, error }) => { if (error) setError(error.message); else setRows(data || []); setLoading(false) }) }, [page,laboratoryId])
+  const isBorrowers = page === 'Borrowers', isReturns = page === 'Returns', isHistory = page === 'Transaction History', isAdmins = page === 'Admins', isApprovals = page === 'Admin Approvals'
   const activeReturns = rows.filter(r => !r.returned_at)
   const activeLoanUnits = new Set(activeReturns.map(row => row.unit_id))
   const shelvesNeedingReturnReview = shelves.filter(shelf => activeUnits(shelf).some(unit => unit.status === 'borrowed' && !activeLoanUnits.has(unit.id)))
@@ -137,9 +160,6 @@ function DatabaseTable({ page, onChange, migrationRequired, shelves = [], onOpen
     } catch (failure) { setError(failure.message) } finally { setReturnBusy(false) }
   }
   const returnModal = returning && <div className="modal-backdrop"><div className="return-modal"><div className="return-modal-icon">↩</div><span className="eyebrow">PROCESS RETURN</span><h2>Return item</h2><p>Confirm the condition of <b>{returning.checkout_shelf_code || returning.inventory_units?.shelves?.code || 'the item'} #{String(returning.checkout_unit_number ?? returning.inventory_units?.unit_number ?? '').padStart(3,'0')}</b> returned by <b>{returning.borrowers?.name || 'the borrower'}</b>.</p><label>Return condition<select disabled={returnBusy} value={returnCondition} onChange={e=>setReturnCondition(e.target.value)}><option value="good">Good</option><option value="damaged">Damaged</option></select></label>{error && <div role="alert" className="connection-error">{error}</div>}<div className="return-modal-actions"><button className="secondary" onClick={()=>setReturning(null)} disabled={returnBusy}>Cancel</button><button className="primary" onClick={confirmReturn} disabled={returnBusy}>Confirm return</button></div></div></div>
-  const visibleUsers = rows.filter(r => roleFilter === 'All' || r.role === roleFilter)
-  async function changeRole(user, role) { const { error: x } = await supabase.from('user_accounts').update({ role }).eq('id', user.id); if (x) setError(x.message); else setRows(rows.map(r => r.id === user.id ? { ...r, role } : r)) }
-  if (isUsers) return <section className="card page"><div className="cardhead"><div><h2>Users</h2><p>Manage Admin and Operator accounts</p></div><Badge>{visibleUsers.length} users</Badge></div><div className="toolbar"><div className="search"><input placeholder="Search users..." onChange={e => setRows(rows.filter(r => r.full_name.toLowerCase().includes(e.target.value.toLowerCase()) || r.email.toLowerCase().includes(e.target.value.toLowerCase())))} /></div><select value={roleFilter} onChange={e => setRoleFilter(e.target.value)}><option>All</option><option>Admin</option><option>Operator</option></select></div><table><thead><tr><th>NAME</th><th>EMAIL</th><th>ROLE</th><th>STATUS</th><th>CHANGE ROLE</th></tr></thead><tbody>{visibleUsers.map(r => <tr key={r.id}><td><b>{r.full_name}</b></td><td>{r.email}</td><td><Badge>{r.role}</Badge></td><td>{r.status}</td><td><select value={r.role} onChange={e => changeRole(r,e.target.value)}><option>Admin</option><option>Operator</option></select></td></tr>)}</tbody></table></section>
   async function approve(row, requestedRole) { const added = await supabase.from('user_accounts').insert({ full_name: row.full_name, email: row.email, role: requestedRole, status: 'active' }); if (added.error) { setError(added.error.message); return } const changed = await supabase.from('account_approvals').update({ status: 'approved', requested_role: requestedRole, reviewed_by: 'Current Admin', reviewed_at: new Date().toISOString() }).eq('id', row.id); if (changed.error) setError(changed.error.message); else setRows(rows.filter(item => item.id !== row.id)) }
   if (isHistory) { const filteredTransactions = rows.filter(r => transactionFilter === 'all' || (transactionFilter === 'returned' ? Boolean(r.returned_at) : !r.returned_at)); return <section className="card page"><div className="cardhead"><div><h2>Transaction History</h2><p>All checkout and return records.</p></div><div className="history-controls"><select value={transactionFilter} onChange={e=>setTransactionFilter(e.target.value)}><option value="all">All items</option><option value="borrowed">Borrowed</option><option value="returned">Returned</option></select><Badge>{filteredTransactions.length} records</Badge></div></div>{error && <div className="connection-error">{error}</div>}{!loading && !error && !filteredTransactions.length && <div className="empty">No transactions match this filter.</div>}{filteredTransactions.length > 0 && <table><thead><tr><th>REFERENCE</th><th>BORROWER</th><th>ITEM</th><th>BORROWED</th><th>EXPECTED RETURN</th><th>BORROWED BY</th><th>RETURNED BY</th><th>STATUS</th></tr></thead><tbody>{filteredTransactions.map(r=><tr key={r.id}><td><b>{r.reference}</b></td><td>{r.borrowers?.name || '—'}</td><td>{r.checkout_item_name && <><b>{r.checkout_item_name}</b><br/></>}{r.checkout_shelf_code || r.inventory_units?.shelves?.code || '—'} #{String(r.checkout_unit_number ?? r.inventory_units?.unit_number ?? '').padStart(3,'0')}</td><td>{new Date(r.borrowed_at).toLocaleDateString()}</td><td>{r.expected_return_at}</td><td>{r.borrowed_by || '—'}</td><td>{r.returned_by || '—'}</td><td><Badge tone={r.returned_at ? 'neutral' : ''}>{r.returned_at ? 'Returned' : 'Borrowed'}</Badge></td></tr>)}</tbody></table>}</section> }
   if (isReturns) return <section className="card page"><div className="cardhead"><div><h2>Returns</h2><p>Process borrowed items returned to the laboratory.</p></div><Badge>{activeReturns.length} active</Badge></div>{error && <div className="connection-error">{error}</div>}{returnStatusWarning}{!loading && !error && !activeReturns.length && <div className="empty">No active loan records are waiting for return.</div>}{activeReturns.length > 0 && <table><thead><tr><th>REFERENCE</th><th>BORROWER</th><th>ITEM</th><th>BORROWED</th><th>EXPECTED RETURN</th><th>ACTION</th></tr></thead><tbody>{activeReturns.map(r => <tr key={r.id}><td><b>{r.reference}</b></td><td>{r.borrowers?.name || '—'}</td><td>{r.checkout_shelf_code || r.inventory_units?.shelves?.code || '—'} #{String(r.checkout_unit_number ?? r.inventory_units?.unit_number ?? '').padStart(3,'0')}</td><td>{new Date(r.borrowed_at).toLocaleDateString()}</td><td>{r.expected_return_at}</td><td><button className="primary" onClick={() => returnItem(r)}>Mark returned</button></td></tr>)}</tbody></table>}{returnModal}</section>
