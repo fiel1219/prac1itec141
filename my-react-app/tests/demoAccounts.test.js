@@ -33,10 +33,11 @@ test('demo seed creates confirmed identities, hashed passwords, and app roles; r
     await db.exec(sql)
     assert.deepEqual((await db.query('select id from auth.users order by email')).rows, first)
     assert.equal((await db.query('select * from auth.identities')).rows.length, 2)
-    const accounts = (await db.query(`select u.email,u.email_confirmed_at,a.role,a.status,
+    const accounts = (await db.query(`select u.email,u.email_confirmed_at,a.full_name,a.role,a.status,
       u.encrypted_password = extensions.crypt(case a.role when 'Admin' then 'InventoAdmin2026!' else 'InventoOperator2026!' end,u.encrypted_password) as valid_password
       from auth.users u join public.user_accounts a on a.email=u.email order by u.email`)).rows
     assert.deepEqual(accounts.map(account => account.role), ['Admin','Operator'])
+    assert.equal(accounts.find(account => account.role === 'Admin').full_name, 'Demo System Admin')
     for (const account of accounts) {
       assert.ok(account.email_confirmed_at)
       assert.equal(account.status, 'active')
@@ -45,6 +46,7 @@ test('demo seed creates confirmed identities, hashed passwords, and app roles; r
     const source = await readFile(new URL('../src/AuthGate.jsx', import.meta.url), 'utf8')
     for (const account of accounts) assert.ok(source.includes(account.email))
     assert.ok(source.includes('InventoAdmin2026!') && source.includes('InventoOperator2026!'))
+    assert.match(source, /role: 'System Admin', email: 'demo\.admin@inventoscan\.test'/)
     await db.exec(`update auth.users set raw_user_meta_data='{}' where email='demo.admin@inventoscan.test'`)
     await assert.rejects(db.exec(sql), /non-demo user/)
     await db.exec('rollback')

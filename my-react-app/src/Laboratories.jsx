@@ -5,10 +5,10 @@ import './Laboratories.css'
 export function LaboratorySelector({ laboratories, selectedId, onSelect, onManage, loading }) {
   return <div className="laboratory-switcher">
     <select className="workspace" aria-label="Laboratory" value={selectedId || ''} disabled={loading || !laboratories.length} onChange={event => onSelect(event.target.value)}>
-      {!laboratories.length && <option value="">{loading ? 'Loading laboratories…' : 'No laboratories'}</option>}
+      {!laboratories.length && <option value="">{loading ? 'Loading laboratories…' : 'No assigned laboratories'}</option>}
       {laboratories.map(lab => <option key={lab.id} value={lab.id}>{lab.name}</option>)}
     </select>
-    <button type="button" className="manage-laboratories" disabled={loading} onClick={onManage}>Manage laboratories</button>
+    {onManage && <button type="button" className="manage-laboratories" disabled={loading} onClick={onManage}>Manage laboratories</button>}
   </div>
 }
 

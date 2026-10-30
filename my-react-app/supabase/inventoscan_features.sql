@@ -1,4 +1,4 @@
--- Run after schema.sql, user account setup, and borrowing_permissions.sql.
+-- Run after schema.sql and user_accounts.sql.
 -- Safe to rerun. Existing inventory and borrowing history are preserved.
 begin;
 alter table public.shelves add column if not exists low_stock_threshold integer not null default 2 check (low_stock_threshold >= 0);

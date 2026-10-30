@@ -4,8 +4,10 @@ import './index.css'
 import './responsive.css'
 import AuthGate from './AuthGate.jsx'
 
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js'))
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(error => console.warn('Offline support could not start.', error))
+  })
 }
 
 createRoot(document.getElementById('root')).render(

@@ -1,5 +1,7 @@
 -- Run the ENTIRE script in Supabase SQL Editor after user_accounts is set up.
 -- Creates confirmed Auth logins AND active application accounts.
+-- The Admin application role is System Admin; no laboratory assignment is needed
+-- to manage users and laboratories.
 -- Demo credentials are intentionally public in the app. Use a demo database.
 -- Rerunning resets only these demo passwords; other users are untouched.
 begin;
@@ -14,7 +16,7 @@ declare
   existing_metadata jsonb;
 begin
   for account in select * from (values
-    ('Demo Admin', 'demo.admin@inventoscan.test', 'InventoAdmin2026!', 'Admin'),
+    ('Demo System Admin', 'demo.admin@inventoscan.test', 'InventoAdmin2026!', 'Admin'),
     ('Demo Operator', 'demo.operator@inventoscan.test', 'InventoOperator2026!', 'Operator')
   ) as accounts(full_name, email, password, app_role)
   loop

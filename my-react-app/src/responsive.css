@@ -1,8 +1,6 @@
 html, body, #root { max-width: 100%; overflow-x: hidden; }
-.login-success{background:#e5f8ee;color:#238b59;padding:10px;border-radius:7px;font-size:12px;margin-top:15px}.switch-auth{display:block;width:100%;border:0;background:none;color:#6856e8;font-size:12px;margin-top:15px}
 main { min-width: 0; width: 100%; }
 table { max-width: 100%; }
-
 @media (max-width: 900px) {
   .login-screen { padding: 18px; align-items: start; }
   .login-layout { display: block; width: 100%; max-width: 430px; margin: auto; }
@@ -13,13 +11,10 @@ table { max-width: 100%; }
   .login-card { width: 100%; padding: 24px; }
   .login-intro, .login-card { min-width: 0; }
 }
-
 @media (max-width: 700px) {
   main { padding-left: 16px; padding-right: 16px; }
   header { min-width: 0; }
   .card { max-width: 100%; overflow: hidden; }
   table { width: 100%; table-layout: fixed; white-space: normal; word-break: break-word; }
   th, td { padding: 10px 5px; font-size: 10px; }
-  .columns { overflow: visible; }
-  .quick, .actions { max-width: 100%; }
 }

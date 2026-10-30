@@ -1,3 +1,5 @@
+import { loadPagedRows } from './queryData.js'
+
 // Select all columns so older databases can still load inventory before migration.
 export async function loadInventoryUnits(client, shelfId) {
   const units = []
@@ -40,11 +42,13 @@ export async function inventoryMigrationRequired(client) {
     if (['42703', '42P01', 'PGRST204', 'PGRST205'].includes(error.code)) required = true
     else return { required: false, error }
   }
-  const { error: unitActionsError } = await client.from('shelves').select('next_unit_number').limit(0)
+  const [{ error: unitActionsError }, { error: permanentDeleteError }] = await Promise.all([
+    client.from('shelves').select('next_unit_number').limit(0),
+    client.from('stock_movements').select('unit_id_snapshot').limit(0),
+  ])
   if (unitActionsError && !['42703', '42P01', 'PGRST204', 'PGRST205'].includes(unitActionsError.code)) {
     return { required, error: unitActionsError }
   }
-  const { error: permanentDeleteError } = await client.from('stock_movements').select('unit_id_snapshot').limit(0)
   if (permanentDeleteError && !['42703', '42P01', 'PGRST204', 'PGRST205'].includes(permanentDeleteError.code)) {
     return { required, error: permanentDeleteError }
   }
@@ -71,4 +75,42 @@ export async function inventoryItemCategoriesRequired(client) {
     else return { required: false, error }
   }
   return { required, error: null }
+}
+
+
+
+const setupCache = new WeakMap()
+export function loadInventorySetup(client, now = Date.now()) {
+  const cached = setupCache.get(client)
+  if (cached && cached.expiresAt > now) return cached.promise
+  const entry = { expiresAt: Infinity }
+  entry.promise = Promise.all([inventoryMigrationRequired(client), inventoryItemNamesRequired(client), inventoryItemCategoriesRequired(client)])
+    .then(([inventory, names, categories]) => {
+      const error = inventory.error || names.error || categories.error
+      const result = { migrationRequired: inventory.required, unitActionsRequired: inventory.unitActionsRequired,
+        permanentDeleteRequired: inventory.permanentDeleteRequired, itemNamesRequired: names.required,
+        itemCategoriesRequired: categories.required, error: error || null }
+      if (setupCache.get(client) === entry) {
+        if (!error && !Object.entries(result).some(([key, value]) => key !== 'error' && value)) entry.expiresAt = now + 300000
+        else setupCache.delete(client)
+      }
+      return result
+    }).catch(error => { if (setupCache.get(client) === entry) setupCache.delete(client); throw error })
+  setupCache.set(client, entry)
+  return entry.promise
+}
+
+export async function loadShelfInventory(client) {
+  const [shelves, units, setup] = await Promise.all([
+    loadPagedRows(client, 'shelves', { orders: [['code'], ['id']], filters: [['status', 'active']] }),
+    loadInventoryUnits(client), loadInventorySetup(client),
+  ])
+  const error = shelves.error || units.error || setup.error
+  if (error) return { data: null, error }
+  const grouped = new Map()
+  for (const unit of units.data) {
+    if (!grouped.has(unit.shelf_id)) grouped.set(unit.shelf_id, [])
+    grouped.get(unit.shelf_id).push(unit)
+  }
+  return { ...setup, data: shelves.data.map(shelf => ({ ...shelf, inventory_units: grouped.get(shelf.id) || [] })), error: null }
 }

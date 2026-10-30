@@ -40,6 +40,9 @@ export default function Users({ laboratories, laboratorySetupRequired, onAccount
     return () => { document.removeEventListener('keydown', escape); dialog?.removeEventListener('keydown', trap); previous?.focus() }
   }, [editing, busy])
   const visible = filterUsers(users, assignments, query, role, laboratory)
+  const shownAssignments = systemRole === 'Admin'
+    ? assignments.filter(row => row.user_id === editing?.id).map(({ laboratory_id, role }) => ({ laboratory_id, role }))
+    : draft
   const name = id => laboratories.find(lab => lab.id === id)?.name || 'Unavailable laboratory'
   function open(user) {
     setEditing(user); setSystemRole(user.role); setDraft(assignments.filter(row => row.user_id === user.id).map(({ laboratory_id, role }) => ({ laboratory_id, role })))
@@ -49,13 +52,13 @@ export default function Users({ laboratories, laboratorySetupRequired, onAccount
   async function save(event) {
     event.preventDefault()
     if (busy) return
-    if (draft.some(row => !row.laboratory_id) || new Set(draft.map(row => row.laboratory_id)).size !== draft.length) { setSaveError('Choose a different laboratory for each assignment.'); return }
+    if (shownAssignments.some(row => !row.laboratory_id) || new Set(shownAssignments.map(row => row.laboratory_id)).size !== shownAssignments.length) { setSaveError('Choose a different laboratory for each assignment.'); return }
     setBusy(true); setSaveError('')
     try {
-      const { error: failure } = await supabase.rpc('inventory_save_user_assignments', { p_user_id: editing.id, p_system_role: systemRole, p_assignments: draft })
+      const { error: failure } = await supabase.rpc('inventory_save_user_assignments', { p_user_id: editing.id, p_system_role: systemRole, p_assignments: shownAssignments })
       if (failure) throw failure
       setUsers(rows => rows.map(row => row.id === editing.id ? { ...row, role: systemRole } : row))
-      setAssignments(rows => [...rows.filter(row => row.user_id !== editing.id), ...draft.map(row => ({ ...row, user_id: editing.id }))])
+      setAssignments(rows => [...rows.filter(row => row.user_id !== editing.id), ...shownAssignments.map(row => ({ ...row, user_id: editing.id }))])
       setEditing(null); setSuccess('User roles and laboratory assignments saved.')
       onAccountChange()
     } catch (failure) { setSaveError(failure.code === 'PGRST202' ? 'User assignments need a system update. Please contact an administrator.' : failure.message) }
@@ -79,16 +82,18 @@ export default function Users({ laboratories, laboratorySetupRequired, onAccount
     </>}
     {editing && <div className="modal-backdrop"><form id="user-assignment-dialog" className="user-assignment-dialog" role="dialog" aria-modal="true" aria-labelledby="user-assignment-title" onSubmit={save}>
       <h2 id="user-assignment-title">Manage roles</h2><p>{editing.full_name} · {editing.email}</p>
-      <label>System role<select aria-label="System role" value={systemRole} disabled={busy} onChange={event => setSystemRole(event.target.value)}><option value="Operator">Laboratory member</option><option value="Admin">System Admin</option></select></label>
-      <p className="assignment-help">System Admins manage users across all laboratories. Assign laboratory responsibilities below.</p>
-      <h3>Laboratory assignments</h3>
-      {!draft.length && <p>No laboratory assigned.</p>}
-      <div className="assignment-list">{draft.map((row, index) => <div className="assignment-row" key={index}>
-        <label>Laboratory<select aria-label="Assigned laboratory" required value={row.laboratory_id} disabled={busy} onChange={event => update(index, 'laboratory_id', event.target.value)}><option value="">Choose laboratory</option>{!laboratories.some(lab => lab.id === row.laboratory_id) && row.laboratory_id && <option value={row.laboratory_id}>Unavailable laboratory</option>}{laboratories.map(lab => <option key={lab.id} value={lab.id} disabled={draft.some((other, i) => i !== index && other.laboratory_id === lab.id)}>{lab.name}</option>)}</select></label>
+      <label>System role<select aria-label="System role" value={systemRole} disabled={busy} onChange={event => { setSystemRole(event.target.value); setSaveError('') }}><option value="Operator">Laboratory member</option><option value="Admin">System Admin</option></select></label>
+      <p className="assignment-help">{systemRole === 'Admin' ? 'System Admins manage users across all laboratories. Select Laboratory member to edit laboratory assignments.' : 'Assign laboratory responsibilities below.'}</p>
+      <fieldset className="laboratory-assignment-fields" disabled={busy || systemRole === 'Admin'}>
+      <legend>Laboratory assignments</legend>
+      {!shownAssignments.length && <p>No laboratory assigned.</p>}
+      <div className="assignment-list">{shownAssignments.map((row, index) => <div className="assignment-row" key={index}>
+        <label>Laboratory<select aria-label="Assigned laboratory" required value={row.laboratory_id} disabled={busy} onChange={event => update(index, 'laboratory_id', event.target.value)}><option value="">Choose laboratory</option>{!laboratories.some(lab => lab.id === row.laboratory_id) && row.laboratory_id && <option value={row.laboratory_id}>Unavailable laboratory</option>}{laboratories.map(lab => <option key={lab.id} value={lab.id} disabled={shownAssignments.some((other, i) => i !== index && other.laboratory_id === lab.id)}>{lab.name}</option>)}</select></label>
         <label>Laboratory role<select aria-label="Laboratory role" value={row.role} disabled={busy} onChange={event => update(index, 'role', event.target.value)}>{laboratoryRoles.map(value => <option key={value}>{value}</option>)}</select></label>
         <button type="button" className="secondary" disabled={busy} onClick={() => setDraft(rows => rows.filter((_, i) => i !== index))} aria-label={`Remove assignment ${index + 1}`}>Remove</button>
       </div>)}</div>
       <button type="button" className="secondary" disabled={busy || !laboratories.some(lab => !draft.some(row => row.laboratory_id === lab.id))} onClick={() => setDraft(rows => [...rows, { laboratory_id: laboratories.find(lab => !rows.some(row => row.laboratory_id === lab.id)).id, role: 'Laboratory Operator' }])}>Add laboratory assignment</button>
+      </fieldset>
       {saveError && <p role="alert" className="connection-error">{saveError}</p>}
       <div className="user-assignment-actions"><button type="button" className="secondary" disabled={busy} onClick={() => setEditing(null)}>Cancel</button><button type="submit" className="primary" disabled={busy}>{busy ? 'Saving…' : 'Save assignments'}</button></div>
     </form></div>}

@@ -2,7 +2,28 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { PGlite } from '@electric-sql/pglite'
-import { filterUsers, loadUserLaboratories, userRoleLabel } from '../src/lib/userLaboratories.js'
+import { assignedLaboratories, resolveAssignedLaboratory, filterUsers, loadUserLaboratories, userRoleLabel } from '../src/lib/userLaboratories.js'
+
+test('laboratory selection is limited to active assignments and replaces inaccessible saved selections', () => {
+  const laboratories=[{id:'science',name:'Science'},{id:'computer',name:'Computer'},{id:'chemistry',name:'Chemistry'}]
+  const memberships=[
+    {user_id:'u',laboratory_id:'computer',role:'Laboratory Admin'},
+    {user_id:'u',laboratory_id:'chemistry',role:'Laboratory Operator'},
+    {user_id:'someone-else',laboratory_id:'science',role:'Laboratory Operator'},
+  ]
+  const user={id:'u',status:'active',role:'Operator'}
+  const accessible=assignedLaboratories(laboratories,user,memberships)
+  assert.deepEqual(accessible.map(lab=>lab.id),['computer','chemistry'])
+  assert.equal(resolveAssignedLaboratory(accessible,'science'),'computer')
+  assert.equal(resolveAssignedLaboratory(accessible,'chemistry'),'chemistry')
+  assert.equal(resolveAssignedLaboratory(accessible,''),'computer')
+  assert.equal(resolveAssignedLaboratory([],'science'),'')
+  assert.deepEqual(assignedLaboratories(laboratories,{...user,role:'Admin'},[]),[])
+  assert.deepEqual(assignedLaboratories(laboratories,{...user,status:'disabled'},memberships),[])
+  assert.deepEqual(assignedLaboratories(laboratories,null,memberships),[])
+  assert.deepEqual(assignedLaboratories(laboratories,user,[{user_id:'u',laboratory_id:'science',role:'Unknown'}]),[])
+  assert.deepEqual(assignedLaboratories(laboratories,user,memberships.slice(1)).map(lab=>lab.id),['chemistry'])
+})
 
 test('user filters preserve all accounts and match laboratory and role on the same assignment', () => {
   const users = [{ id:'a', full_name:'Maria', email:'maria@example.test', role:'Operator' }, { id:'b', full_name:'John', email:'john@example.test', role:'Admin' }, { id:'c', full_name:'Ana', email:'ana@example.test', role:'Operator' }]

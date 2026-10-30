@@ -1,44 +1,10 @@
 # VSU InventoScan
 
-QR-based laboratory inventory built with React, Vite, and Supabase.
+Laboratory inventory built with React, Vite, and Supabase.
 
-## Enable the new features on your existing database
+## Local setup
 
-Open your project's Supabase SQL Editor and run **supabase/inventoscan_features.sql**, then **supabase/inventory_qr.sql**, then **supabase/inventory_unit_actions.sql**. These migrations enable inventory transactions, the equipment/consumable QR setup, and per-unit Move/Delete actions. They are safe to rerun and preserve existing shelves, unit IDs, shelf QR values, and borrowing history. These files have not been applied to your live database by this code change. If the first two migrations are already installed, only the third is needed for the new unit actions.
-
-For the return-status correction flow, also run **supabase/inventory_return_repair.sql** after those migrations. It updates the return function and adds a way to confirm a physical return when a unit has a stale borrowed status and no active loan. Installing it does not automatically release any borrowed equipment or rewrite historical loans.
-
-Run **supabase/inventory_permanent_delete.sql** after the return migration to replace the old archive behavior with permanent deletion. It removes the archive RPC and its timestamp column, prevents new archived statuses, permanently removes previously retired units without outstanding loans, and deletes previously archived empty shelves. A legacy archived shelf that still contains stock becomes visible again so staff can resolve its units. Historical loans, movements, and inventory checks retain independent snapshots, with nullable references to deleted entities. This script does not delete borrowers or user accounts. Like the other migrations, it has not been run against your live database by these local code edits.
-
-Run **supabase/inventory_shelf_items.sql** after permanent deletion setup to allow different named items on one shelf. It copies each existing shelf's item type onto its existing units, preserves equipment IDs and QR codes, and stores item names in borrowing and movement history. Shelf forms ask only for code, name, and optional shelf description after the later category migration. Enter an item name and quantity under **Add items** in the shelf popup, or use **Stock Movements**. Consumable shelf scans and stock-out require choosing the specific item to issue. The app detects missing setup and disables named stock operations until this migration is applied; shelf creation, inventory viewing, and equipment returns remain available. This migration has not been applied to the live database by these local code changes.
-
-Run **supabase/inventory_item_descriptions.sql** after the named-item migration to save optional descriptions from **Add items**. Each unit in the receipt gets its own copy of the description, which stays with it after a shelf move. Descriptions are available in the equipment popup, equipment QR details, and the unit management table for both equipment and consumables. Existing comments and receipt notes remain separate. This migration has not been applied to the live database by these local code changes.
-
-For a fresh database, first run schema.sql, configure your existing user_accounts/account_approvals tables and approved sign-in account, then run borrowing_permissions.sql, inventoscan_features.sql, inventory_qr.sql, and inventory_unit_actions.sql in that order. Do not run both alternate user-table scripts; retain the account setup you already use. Seed scripts are optional demo data.
-
-Run **supabase/inventory_item_categories.sql** after the item description migration to move Equipment/Consumables onto each item and enable shelf descriptions. The migration copies legacy shelf categories onto their existing units without changing IDs, QR payloads, quantities, descriptions, or active loans. New shelves use a single-column code/name/optional-description form. Choose the category when adding items; both categories may share one shelf, including items with the same name. Equipment keeps a QR per unit; the shelf QR exposes only consumables. Category-aware stock operations, reports, transfers, and loan validation keep the two categories separate. Older stock APIs reject ambiguous item names. Existing shelf category/type columns remain for compatibility with older clients and no longer restrict the current shelf contents. This migration has not been applied to the live database by local edits.
-
-Run **supabase/inventory_consumable_quantities.sql** after the item category migration to store consumables as quantity records. Adding 50 of a new consumable creates one stock row with quantity 50; restocking adds to that row and issuing subtracts from it, including down to zero. Equipment stays individually tracked. The shelf popup has Equipment and Consumables columns (stacked on mobile), using Equipment 001 / Consumable 001 labels. Existing correctly categorized consumable rows are consolidated while preserving quantities, movement snapshots, descriptions, and equipment QR IDs. Unavailable/damaged stock is retained in separate internal stock states and grouped into one consumable card. Existing equipment records are never guessed to be consumables from their names. Run this migration after all prior migrations; it has not been applied to the live database by local edits.
-
-Run **supabase/inventory_consumable_actions.sql** for per-consumable Move and Delete. Every consumable card has **View QR**, **Move**, and **Delete** beside its details. View QR displays that shelf's shared consumable label. Move transfers the full quantity, combines matching stock at the destination while retaining stock condition/status, and records transfers without duplicating receipts. Delete requires a reason and permanently removes that consumable's stock rows and remaining quantity, preserving independent movement history. Requests reject a changed quantity rather than acting on a stale confirmation. Equipment with the same item name is unaffected. This migration has not been applied to the live database by local edits.
-
-Run **supabase/inventory_bulk_actions.sql**, after the consumable actions migration, to enable multiple selection. Use the checkboxes in either column, or **Select all items**, then **Move selected** or **Delete selected**. Select all includes every eligible item in both columns; borrowed equipment must be returned before it can be selected. The confirmation lists each selected equipment record and the full quantity of each selected consumable. Bulk moves use one destination shelf and retain equipment IDs/QRs, combining matching consumables. Bulk deletion requires a reason and permanently deletes the selected database rows while preserving history. Each batch runs in one database transaction: a stale quantity, missing/moved record, permission failure, or outstanding loan cancels the entire batch. Canceling the form retains the selection. This migration has not been applied to the live database by local edits.
-
-Run **supabase/inventory_laboratories.sql LAST**, after bulk actions, to enable laboratory inventories. It creates **Science Laboratory** once and assigns existing shelves and history to it without changing shelf/item IDs, quantities, active loans, or QR values. Choose the laboratory in the sidebar; **Manage laboratories** provides Add, Edit (name and optional description), and permanent Delete. Dashboard counts, shelves, items, stock entry, reports, returns, and transaction history use the selected laboratory. Equipment and consumable QR scans reject a different laboratory until you select it. Borrowers and user accounts remain shared. This organizes inventory for authenticated staff; it does not introduce separate per-laboratory user permissions. Selection is remembered in the browser, and switching clears unfinished inventory forms.
-
-Shelf codes may repeat across laboratories but must be unique inside each laboratory; QR values stay globally unique. New shelves are saved directly into the selected laboratory. Laboratory deletion requires removing its shelves first, including empty shelves, and never cascades through inventory. Historical records retain independent laboratory ID/name snapshots after a shelf or laboratory is deleted. Rerunning the migration never recreates a laboratory that was intentionally deleted. If the laboratory migration is missing, existing inventory remains available under the legacy Science Laboratory label, with laboratory management disabled. Older clients can create shelves only when exactly one laboratory exists. This migration has not been applied to the live database by local edits.
-
-Run **supabase/user_laboratories.sql** after laboratory and user account setup to enable **Users > Manage roles**. Existing `Admin` accounts display as **System Admin**. System Admins can assign **Laboratory Admin** or **Laboratory Operator** to one or more laboratories, with one role per user/laboratory pair. Users lists each laboratory beside its assigned role, supports search plus role/laboratory filters, and shows unassigned users explicitly. The signed-in user's sidebar displays their role in the selected laboratory. Existing users are not automatically assigned to laboratories.
-
-The migration protects assignment changes in the database, blocks account creation by non-admins, and requires role updates to use the atomic assignment function. It prevents removal of the final active System Admin. Laboratory Admin assignments do not grant System Admin privileges. These assignments record responsibilities; inventory access remains governed by the existing shared inventory policies. Enforcing inventory isolation by membership is a separate permissions change. Apply this migration after the older account scripts so they do not restore prototype account permissions. Missing setup disables role management while keeping the user list available. This migration has not been applied to your live database by these local changes.
-
-Run **supabase/inventory_checks.sql** after **inventory_laboratories.sql** and **user_laboratories.sql** to enable shelf condition inspections. Only active users assigned **Laboratory Admin** or **Laboratory Operator** in the selected laboratory see Inventory Checks and can read/save its records. System Admin status alone does not grant inspection access; a System Admin can assign themselves a laboratory role through Users if needed. The database enforces these permissions on check history and the save RPC. Other inventory features retain their existing shared policies.
-
-In **Inventory > Inventory Checks**, choose a shelf, select **Good** or **Damaged** explicitly for every inspectable stock record, and optionally add observations and check notes. Borrowed, missing/not-found and zero-quantity records are shown as skipped. Good items become available; damaged items go under maintenance. Each consumable selection applies to its full displayed stock quantity. Reclassification preserves total quantities and merges matching consumable stock states without creating receipts or stock issues. Equipment IDs and QR codes stay unchanged.
-
-Saving validates the entire shelf snapshot and applies all findings atomically. If an item was moved, borrowed, removed or its status/condition/quantity changed, reload the shelf and review it again. Checks store the reviewer, time, original shelf/laboratory, item identities, previous conditions, findings, quantities and observations. The latest ten checks can be expanded for details; snapshots survive item and shelf deletion. Missing setup disables saving with an update message. This migration has not been applied to your live database by local edits.
-
-Configure .env.local (never commit it):
+Create `.env.local` with your project's public connection settings:
 
 ```dotenv
 VITE_SUPABASE_URL=https://your-project.supabase.co
@@ -50,50 +16,71 @@ npm ci
 npm run dev
 ```
 
-## Features
+## Database setup
 
-### Demo login accounts
+For a fresh database, run these scripts in Supabase SQL Editor in this order:
 
-Run the entire `supabase/demo_accounts.sql` script in Supabase SQL Editor after the existing `user_accounts` table is set up. It creates confirmed email/password Auth users, email identities, and active application accounts. Refresh the login page and click Operator or Admin under "Try a demo account" to sign in directly.
+1. `supabase/schema.sql`
+2. `supabase/user_accounts.sql`
+3. `supabase/inventoscan_features.sql`
+4. `supabase/inventory_qr.sql`
+5. `supabase/inventory_unit_actions.sql`
+6. `supabase/inventory_return_repair.sql`
+7. `supabase/inventory_permanent_delete.sql`
+8. `supabase/inventory_shelf_items.sql`
+9. `supabase/inventory_item_descriptions.sql`
+10. `supabase/inventory_item_categories.sql`
+11. `supabase/inventory_consumable_quantities.sql`
+12. `supabase/inventory_consumable_actions.sql`
+13. `supabase/inventory_bulk_actions.sql`
+14. `supabase/inventory_laboratories.sql`
+15. `supabase/user_laboratories.sql`
+16. `supabase/inventory_checks.sql`
+17. `supabase/security_hardening.sql`
 
-| Role | Email | Password |
+`schema.sql` is for a fresh database only. For an existing installation, apply missing migrations in the same order. Keep the migration files: later migrations extend earlier functions, and the upgrade tests exercise that sequence. Run account setup before the membership migration so current account permissions are applied last.
+
+Create your first sign-in user in Supabase Auth and add their matching email to `user_accounts` with role `Admin` and status `active`. System Admins assign laboratory roles under **Users**. Existing accounts are not automatically assigned to laboratories.
+
+Optional sample inventory: run `supabase/seed.sql` immediately after `schema.sql`, before the feature migrations. Optional demo logins: run `supabase/demo_accounts.sql` after account setup.
+
+### Existing database cleanup
+
+`supabase/cleanup_legacy_tables.sql` removes empty legacy `admin_accounts`, `operator_accounts`, and `activity_logs` tables. It keeps populated tables or tables with dependent objects and reports why they were retained. Review and migrate/export those records before removing them. It does not remove current accounts, inventory, loans, checks, or movement history.
+
+Local file edits do not apply SQL to your live database.
+
+## Current tables
+
+| Tables | Purpose |
+| --- | --- |
+| `user_accounts`, `account_approvals` | User profiles, system roles, registration requests |
+| `laboratories`, `laboratory_memberships` | Laboratories and per-user roles |
+| `shelves`, `inventory_units` | Storage locations, equipment, consumable quantities |
+| `borrowers`, `transactions` | Borrowers, checkout and return records |
+| `stock_movements`, `inventory_checks` | Stock audit history and shelf inspections |
+
+## Features and permissions
+
+- **Laboratory selection:** active users can select only assigned laboratories. Inaccessible saved selections fall back to an assigned laboratory; unassigned accounts see a disabled selector and no laboratory inventory. Assignments refresh every 30 seconds and when the tab becomes visible. System Admins retain Users and laboratory management; inventory selection still requires a laboratory assignment.
+- **Shelves and items:** choose a shelf to receive named equipment or consumables. Equipment is individually tracked; consumables use quantity records. Shelves can contain both categories. Search and edit items under Equipment and Consumables.
+- **QR and borrowing:** each equipment unit has a permanent QR identity. Each consumable item has a QR identifying its shelf and consumable reference, shared across its stock conditions and quantities. View/download it from Items or the shelf popup. Scanning that label opens the consumable directly; enter quantity and reason/recipient without choosing an item. Generate a new label after moving the consumable to another shelf. Existing shelf QR labels still work and offer an item picker. Scan equipment to choose/add a borrower, set a return date, and check out. Returns record condition; damaged equipment goes under maintenance. Manual QR entry is available when camera scanning is unsupported. Consumable item labels use the existing stock fields and need no new database migration.
+- **Move and delete:** shelf popups support individual and bulk actions. Borrowed equipment must be returned first. Consumables move as full quantities and merge matching stock states. Deletion requires a reason. Delete shelves only after emptying them. History snapshots survive deletion.
+- **Inventory Checks:** only active, assigned Laboratory Admins and Laboratory Operators can read/save checks. Choose a shelf and explicitly mark each inspectable record Good or Damaged, with optional observations. Borrowed, missing, and zero-stock records are skipped. Good items become available; damaged items go under maintenance. Consumable findings apply to the displayed stock quantity. Saves are atomic and reject changed inventory; the latest ten checks expand to show findings and reviewer details.
+- **Reports:** current inventory summary, search, low-stock filtering, and CSV export. Inventory actions continue recording stock movements in the database.
+
+After `security_hardening.sql`, laboratory memberships are enforced in the database for shelves, items, transactions, stock movements and checks. Anonymous requests cannot read inventory or account lists. System Admins can administer laboratories and accounts, while inventory access still requires a laboratory membership. Borrowers remain a shared catalog for active accounts. Account approvals use one database transaction, so a failed review cannot leave an active account behind. Apply this migration last on existing installations; local edits do not install these protections on the live database.
+
+Inventory data and setup queries load in parallel. Successful schema checks share in-flight requests and are cached for five minutes; missing setup and failures are rechecked. Automatic inventory polling pauses in hidden tabs and skips overlapping requests. Borrowers, users and approval lists paginate beyond the API row limit. QR generation loads its library on demand, and date inputs use local calendar dates.
+
+### Demo accounts
+
+| System role | Email | Password |
 | --- | --- | --- |
 | Operator | demo.operator@inventoscan.test | InventoOperator2026! |
-| Admin | demo.admin@inventoscan.test | InventoAdmin2026! |
+| System Admin | demo.admin@inventoscan.test | InventoAdmin2026! |
 
-These credentials are deliberately public and provide real role access; use demo inventory data. The SQL is safe to rerun and resets only accounts marked as demo users. It refuses to overwrite a non-demo Auth user with the same email.
-
-- **Laboratories:** choose a laboratory from the sidebar and use Manage laboratories to add, edit, or permanently delete an empty laboratory. Each laboratory groups its own shelves and inventory. Remove its shelves before deleting it.
-- **Items:** separate Equipment and Consumables lists show all active items in the selected laboratory, with search by name, reference, or description. Equipment is listed individually, including borrowed and maintenance records. Each named consumable at a storage location is grouped into one row with total and available quantities, including zero-stock catalog items. Edit status, condition, and comments directly; a stock-record selector handles consumables with multiple internal states. Borrowed equipment must be returned before editing. View QR opens the equipment label or the consumable's shared shelf QR directly. Shelf rows, shelf-management buttons, and thresholds are absent from this page.
-- **Shelves:** add shelves from Dashboard or Shelves, then open a shelf to receive named equipment/consumables, manage stock, or generate QR labels. Delete shelf permanently removes an empty shelf's database row. Historical records use snapshots so reports still work after deletion.
-- **Stock Movements:** receive 1–1000 pieces per operation (individual equipment records or one consumable quantity record), or remove available units with a required reason. Unit numbers are never reused. Borrowed, damaged, and maintenance units cannot be removed as available stock; return or resolve their condition first.
-- **Scan QR / Returns:** scan an equipment unit to open only its record for checkout or return. Scan a consumable shelf to view its quantity and issue a whole-number amount with a reason/recipient. Manual QR entry remains available. Atomic database functions validate transactions; consumables cannot be borrowed. Damaged equipment returns go to maintenance.
-- **Dashboard:** shelves, equipment units, and total consumable quantities for the selected laboratory. Shelf cards show separate equipment and consumable totals. Counts refresh after local changes, every 30 seconds, and when returning to the tab.
-- **Reports:** current inventory summary for the selected laboratory, search, low-stock filtering, and summary CSV export. The stock movement report and its date/direction filters, refresh control, and movement CSV export are removed from Reports. Inventory actions still record their existing history in the database.
-
-### QR label setup
-
-Choose **Equipment** or **Consumables** in **Add items**. Shelves describe storage locations and can hold both categories. Existing records inherit their former shelf category when `inventory_item_categories.sql` is first run; moving an item or editing a shelf does not change its category.
-
-- **Equipment:** open **Items > Units > Unit QR**, or open a shelf and choose **View QR** beside its equipment unit, to download a label for each unit. The payload is `VSU-EQUIPMENT:<unit UUID>`. It uses the unit's permanent database ID, so matching unit numbers on different shelves produce different labels. Editing shelf details or moving the same unit does not change its QR identity. Retired units cannot be scanned for new transactions.
-- **Consumables:** open the shelf and choose **View QR** beside any consumable to download the shelf label. Existing shelf QR values remain unchanged when shelf details are edited. Scanning shows the supply type and available quantity. Issue supplies through the scan result or Stock Movements.
-
-Shelf labels open only consumables on that shelf; equipment borrowing uses the individual equipment QR. The scanner asks staff to use the QR on the individual equipment unit instead. Camera scanning requires a browser supporting BarcodeDetector, camera permission, and HTTPS or localhost; manual entry remains available.
-
-### Manage equipment inside the shelf popup
-
-Open a shelf's item popup from Shelves or Items. Every unit has **View QR**, **Move**, and **Delete** buttons. Borrowed units must be returned before moving or deleting them.
-
-Borrowed units also have a **Return** button. It checks for open loan records before displaying a form. With an active loan, it records the normal return. With no active loan, staff must confirm that the equipment is physically back, choose its condition, and enter a reason. The database refuses status correction while a loan is still open. Confirmed corrections log the operator and reason in movement history without inventing a borrower or loan.
-
-- **Add items:** enter an item name, choose Equipment or Consumables, enter a quantity (1–1000), and an optional description (up to 1000 characters), then confirm or cancel. Shelf actions and QR labels are hidden while this form is open. Receive more of an existing item or add a different item to the same shelf. Each piece of equipment gets its own permanent QR identity. Consumables share the shelf QR and use one quantity card per item name; additional receipts increase the stored quantity.
-- **Move:** choose another active shelf. Notes are optional. The item name, permanent UUID, QR code, condition, and loan history stay with the unit. Its Equipment reference number can change to avoid collisions. Source and destination movements record the transfer, and subsequent receipts do not reuse numbers vacated by transfers.
-- **Delete:** enter a reason and confirm. This permanently deletes the selected equipment row from `inventory_units`. Damaged or maintenance units can also be deleted once no loan is open. Existing loan and movement records remain as history snapshots, with no live equipment row behind them.
-- **Delete shelf:** becomes available when the shelf has no remaining stock. Confirming permanently removes the row from `shelves` and cleans up any previously removed stock still attached to it. The same permanent action is available under Items. A deleted shelf code can be reused for a new shelf.
-
-Successful actions update the open popup and inventory counts. Database validation also rejects stale actions, such as a unit another user has already borrowed or removed. Missing permanent-delete setup disables Delete while other inventory operations remain available. Installing this setup is required so the app never presents soft deletion as permanent deletion.
-
-The old sample data incorrectly marked some units as borrowed without creating loans, and marked one completed return as still borrowed. Fresh `seed.sql` data fixes those flags. For previously loaded sample data, use the popup's Return confirmation after checking physical presence. Do not clear borrowed statuses in bulk. Returns loads active loans directly and paginates its queries so older open loans remain visible even when history exceeds the API row limit.
+Run the entire `supabase/demo_accounts.sql` script in Supabase SQL Editor after account setup, then select **Open system admin demo** on the sign-in page. It creates a confirmed Auth login and an active System Admin profile, or refreshes the existing demo account with the same credentials. System Admins can manage users and laboratories without a laboratory assignment. Assign a laboratory to the Operator demo before using its inventory. These are public demo credentials; use a demo database. The seed refuses to replace an unrelated Auth account with the same email.
 
 ## Verification
 
@@ -103,4 +90,4 @@ npm run lint
 npm run build
 ```
 
-Tests use an isolated in-memory PostgreSQL runtime (PGlite), with mocked Supabase auth functions. They validate migration reruns, authenticated permissions, receiving/removing stock, duplicate checkout and return rejection, damaged returns, archiving, preserved history, counts, and CSV escaping. They do not connect to your live Supabase database or test a physical camera.
+Tests cover migrations, QR resolution, checkout/return, quantity accounting, transfers, deletion, laboratory assignments, inventory checks, and safe legacy cleanup.

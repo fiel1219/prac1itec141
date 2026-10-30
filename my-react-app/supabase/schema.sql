@@ -1,4 +1,4 @@
--- Stockly inventory schema. Run this once in Supabase SQL Editor.
+-- VSU InventoScan inventory schema. Run this once in Supabase SQL Editor.
 create extension if not exists pgcrypto;
 
 create type public.unit_status as enum ('available','borrowed','missing','under_maintenance','not_found');
@@ -62,36 +62,15 @@ create table public.inventory_checks (
   checked_at timestamptz not null default now()
 );
 
-create table public.activity_logs (
-  id uuid primary key default gen_random_uuid(),
-  actor text not null,
-  action text not null,
-  entity_type text,
-  entity_id uuid,
-  details jsonb not null default '{}'::jsonb,
-  created_at timestamptz not null default now()
-);
-
-create table public.admin_accounts (
-  id uuid primary key default gen_random_uuid(),
-  full_name text not null,
-  email text not null unique,
-  status public.account_status not null default 'active',
-  created_at timestamptz not null default now()
-);
-
 create index inventory_units_shelf_id_idx on public.inventory_units(shelf_id);
 create index transactions_borrower_id_idx on public.transactions(borrower_id);
 create index transactions_unit_id_idx on public.transactions(unit_id);
-create index activity_logs_created_at_idx on public.activity_logs(created_at desc);
 
 alter table public.shelves enable row level security;
 alter table public.inventory_units enable row level security;
 alter table public.borrowers enable row level security;
 alter table public.transactions enable row level security;
 alter table public.inventory_checks enable row level security;
-alter table public.activity_logs enable row level security;
-alter table public.admin_accounts enable row level security;
 
 -- Prototype policies. Replace these with authenticated role policies before production.
 create policy "prototype read shelves" on public.shelves for select using (true);
@@ -99,5 +78,3 @@ create policy "prototype read units" on public.inventory_units for select using 
 create policy "prototype read borrowers" on public.borrowers for select using (true);
 create policy "prototype read transactions" on public.transactions for select using (true);
 create policy "prototype read checks" on public.inventory_checks for select using (true);
-create policy "prototype read logs" on public.activity_logs for select using (true);
-create policy "prototype read admins" on public.admin_accounts for select using (true);

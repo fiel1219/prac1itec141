@@ -1,5 +1,15 @@
 export const laboratoryRoles = ['Laboratory Admin', 'Laboratory Operator']
 
+export function assignedLaboratories(laboratories, user, assignments) {
+  if (user?.status !== 'active') return []
+  const ids = new Set(assignments.filter(row => row.user_id === user.id && laboratoryRoles.includes(row.role)).map(row => row.laboratory_id))
+  return laboratories.filter(laboratory => ids.has(laboratory.id))
+}
+
+export function resolveAssignedLaboratory(laboratories, preferredId) {
+  return laboratories.some(laboratory => laboratory.id === preferredId) ? preferredId : laboratories[0]?.id || ''
+}
+
 export async function loadUserLaboratories(client, userId) {
   const assignments = []
   for (let offset = 0; ; offset += 500) {

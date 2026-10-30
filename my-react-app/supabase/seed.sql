@@ -1,4 +1,4 @@
--- Stockly sample data
+-- VSU InventoScan sample data
 -- Run supabase/schema.sql first, then run this file in Supabase SQL Editor.
 
 -- Shelves
@@ -73,11 +73,3 @@ insert into public.inventory_checks
 select id, 'Jane Doe', 'complete', 10, 10, 0, 0, 'All keyboards verified.' from public.shelves where code = 'A-01'
 union all
 select id, 'Mark Lee', 'review_needed', 8, 7, 0, 1, 'Monitor #008 sent for maintenance.' from public.shelves where code = 'B-01';
-
--- Important activity history.
-insert into public.activity_logs (actor, action, entity_type, details)
-values
-  ('Jane Doe', 'Created sample shelves', 'shelf', '{"count": 5}'::jsonb),
-  ('Jane Doe', 'Borrowed Keyboard #003', 'transaction', '{"reference":"TRX-1042","shelf":"A-01"}'::jsonb),
-  ('Mark Lee', 'Returned Monitor #002', 'transaction', '{"reference":"TRX-1041","shelf":"B-01"}'::jsonb),
-  ('Jane Doe', 'Marked Monitor #008 under maintenance', 'inventory_unit', '{"shelf":"B-01"}'::jsonb);

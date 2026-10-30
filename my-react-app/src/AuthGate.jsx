@@ -1,11 +1,11 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import App from './App'
 import { supabase } from './lib/supabase'
 import './DemoLogin.css'
 
 const demoAccounts = [
   { role: 'Operator', email: 'demo.operator@inventoscan.test', password: 'InventoOperator2026!' },
-  { role: 'Admin', email: 'demo.admin@inventoscan.test', password: 'InventoAdmin2026!' },
+  { role: 'System Admin', email: 'demo.admin@inventoscan.test', password: 'InventoAdmin2026!' },
 ]
 
 export default function AuthGate() {
@@ -16,30 +16,36 @@ export default function AuthGate() {
   const [registering, setRegistering] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   const [email, setEmail] = useState(''), [password, setPassword] = useState(''), [fullName, setFullName] = useState('')
+  const authVersion = useRef(0)
 
   useEffect(() => {
     if (!supabase) return
+    const invalidate = () => { authVersion.current++ }
+    const initialVersion = ++authVersion.current
     supabase.auth.getSession().then(({ data, error: failure }) => {
+      if (initialVersion !== authVersion.current) return
       if (failure) { setError(failure.message); setLoading(false) }
-      else if (data.session) check(data.session)
+      else if (data.session) check(data.session, initialVersion)
       else setLoading(false)
-    })
+    }).catch(failure => { if (initialVersion === authVersion.current) { setError(failure.message); setLoading(false) } })
     const { data: listener } = supabase.auth.onAuthStateChange((_event, current) => {
+      const version = ++authVersion.current
       // Query account permissions after the auth callback releases its lock.
-      if (current) setTimeout(() => check(current), 0)
-      else setSession(null)
+      if (current) setTimeout(() => { if (version === authVersion.current) check(current, version) }, 0)
+      else { setSession(null); setLoading(false) }
     })
-    return () => listener.subscription.unsubscribe()
+    return () => { invalidate(); listener.subscription.unsubscribe() }
   }, [])
 
-  async function check(current) {
+  async function check(current, version = ++authVersion.current) {
     try {
       const { data, error: failure } = await supabase.from('user_accounts').select('role,status').eq('email', current.user.email).maybeSingle()
+      if (version !== authVersion.current) return
       if (failure) throw failure
-      if (data?.status === 'active') setSession(current)
-      else { await supabase.auth.signOut(); setSession(null); setError('Your account is pending approval or disabled.') }
-    } catch (failure) { setSession(null); setError(failure.message) }
-    finally { setLoading(false) }
+      if (data?.status === 'active') { setSession(current); setError('') }
+      else { setSession(null); setLoading(false); setError('Your account is pending approval or disabled.'); await supabase.auth.signOut() }
+    } catch (failure) { if (version === authVersion.current) { setSession(null); setError(failure.message) } }
+    finally { if (version === authVersion.current) setLoading(false) }
   }
 
   async function signIn(credentials, demo = false) {
@@ -62,11 +68,12 @@ export default function AuthGate() {
   async function register(event) {
     event.preventDefault(); setError('')
     if (!supabase) { setError('Connection setup required. Please contact an administrator.'); return }
+    if (!fullName.trim()) { setError('Enter your full name.'); return }
     setSigningIn(true)
     try {
       const { data, error: signupError } = await supabase.auth.signUp({ email, password })
       if (signupError) throw signupError
-      const { error: approvalError } = await supabase.from('account_approvals').insert({ full_name: fullName, email, status: 'pending' })
+      const { error: approvalError } = await supabase.from('account_approvals').insert({ full_name: fullName.trim(), email: email.trim().toLowerCase(), status: 'pending' })
       if (data.session) await supabase.auth.signOut()
       if (approvalError) throw approvalError
       setRegistering(false); setPassword(''); setShowPassword(false); setError('Account created. An administrator must approve it before you can sign in.')
