@@ -37,10 +37,11 @@ For a fresh database, run these scripts in Supabase SQL Editor in this order:
 15. `supabase/user_laboratories.sql`
 16. `supabase/inventory_checks.sql`
 17. `supabase/security_hardening.sql`
+18. `supabase/account_deletion.sql`
 
 `schema.sql` is for a fresh database only. For an existing installation, apply missing migrations in the same order. Keep the migration files: later migrations extend earlier functions, and the upgrade tests exercise that sequence. Run account setup before the membership migration so current account permissions are applied last.
 
-Create your first sign-in user in Supabase Auth and add their matching email to `user_accounts` with role `Admin` and status `active`. System Admins assign laboratory roles under **Users**. Existing accounts are not automatically assigned to laboratories.
+Create your first sign-in user in Supabase Auth and add their matching email to `user_accounts` with role `Admin` and status `active`. System Admins assign laboratory roles under **Users**. Existing accounts are not automatically assigned to laboratories. For existing databases, run `account_deletion.sql` after `security_hardening.sql` to enable account deletion.
 
 Optional sample inventory: run `supabase/seed.sql` immediately after `schema.sql`, before the feature migrations. Optional demo logins: run `supabase/demo_accounts.sql` after account setup.
 
@@ -62,6 +63,7 @@ Local file edits do not apply SQL to your live database.
 
 ## Features and permissions
 
+- **Account deletion:** System Admins can delete another account from Users after typing its email to confirm. The database checks the caller, protects the last active System Admin, blocks self-deletion, and uses the same lock as role changes and approvals. One transaction deletes the Auth login, its linked Auth records through Supabase's cascades, the application profile, laboratory memberships, and the matching registration request. Inventory, loans, and audit history remain. Missing Auth logins do not prevent removing an orphan application profile. Dependent-record failures roll everything back. Existing tokens lose inventory access because database policies require an active application profile; the deleted Auth account cannot sign in or refresh its session. Apply the migration as the database owner and resolve any externally owned records/files before retrying a blocked deletion. [Supabase user deletion behavior](https://supabase.com/docs/guides/auth/managing-user-data).
 - **Laboratory selection:** active users can select only assigned laboratories. Inaccessible saved selections fall back to an assigned laboratory; unassigned accounts see a disabled selector and no laboratory inventory. Assignments refresh every 30 seconds and when the tab becomes visible. System Admins retain Users and laboratory management; inventory selection still requires a laboratory assignment.
 - **Shelves and items:** choose a shelf to receive named equipment or consumables. Equipment is individually tracked; consumables use quantity records. Shelves can contain both categories. Search and edit items under Equipment and Consumables.
 - **QR and borrowing:** each equipment unit has a permanent QR identity. Each consumable item has a QR identifying its shelf and consumable reference, shared across its stock conditions and quantities. View/download it from Items or the shelf popup. Scanning that label opens the consumable directly; enter quantity and reason/recipient without choosing an item. Generate a new label after moving the consumable to another shelf. Existing shelf QR labels still work and offer an item picker. Scan equipment to choose/add a borrower, set a return date, and check out. Returns record condition; damaged equipment goes under maintenance. Manual QR entry is available when camera scanning is unsupported. Consumable item labels use the existing stock fields and need no new database migration.
