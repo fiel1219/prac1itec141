@@ -9,7 +9,7 @@ function worker({offline=false,cacheFailure=false,cachedAsset=false}={}){
   const cache={match:async request=>request==='/index.html'?new Response('<html>App shell</html>'):cachedAsset?new Response('cached script'):undefined,
     put:async()=>{if(cacheFailure)throw Error('Cache full')}}
   vm.runInNewContext(source,{URL,Response,fetch:async()=>{if(offline)throw Error('Offline');return new Response('network script')},
-    caches:{open:async()=>cache,keys:async()=>['inventoscan-shell-v2','inventoscan-shell-v3','another-app-cache'],delete:async name=>deleted.push(name)},
+    caches:{open:async()=>cache,keys:async()=>['inventoscan-shell-v2','inventoscan-shell-v3','inventoscan-shell-v4','another-app-cache'],delete:async name=>deleted.push(name)},
     self:{location:{origin:'https://app.test'},clients:{claim(){}},addEventListener:(name,handler)=>{listeners[name]=handler}}})
   return {deleted,activate:async()=>{let pending;listeners.activate({waitUntil:promise=>{pending=promise}});await pending},
     fetch:request=>{let response;listeners.fetch({request,respondWith:promise=>{response=promise}});return response}}
@@ -25,6 +25,6 @@ test('cache write failures preserve successful network responses and cleanup res
   const instance=worker({cacheFailure:true})
   const response=await instance.fetch({method:'GET',url:'https://app.test/assets/app.js',destination:'script',mode:'cors'})
   assert.equal(await response.text(),'network script')
-  await instance.activate();assert.deepEqual(instance.deleted,['inventoscan-shell-v2'])
+  await instance.activate();assert.deepEqual(instance.deleted,['inventoscan-shell-v2','inventoscan-shell-v3'])
   assert.equal(instance.fetch({method:'GET',url:'https://database.test/rest/v1/shelves'}),undefined)
 })

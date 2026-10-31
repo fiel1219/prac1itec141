@@ -7,10 +7,10 @@
   color-scheme: dark;
   --theme-surface: #191919;
   --theme-surface-muted: #242424;
-  --theme-surface-accent: #302a48;
+  --theme-surface-accent: #393219;
   --theme-text: #f5f5f5;
   --theme-muted: #c4c4ce;
-  --theme-accent: #b6aaff;
+  --theme-accent: #f6d34f;
   --theme-border: #444448;
   --theme-success-bg: #17372a;
   --theme-success-text: #91e5b4;
@@ -39,8 +39,8 @@
   white-space: nowrap;
 }
 
-.theme-toggle:hover { background: var(--theme-surface-accent, #eeedff); }
-.theme-toggle:focus-visible { outline: 2px solid var(--theme-accent, #6554e7); outline-offset: 3px; }
+.theme-toggle:hover { background: var(--theme-surface-accent, #fff5c2); }
+.theme-toggle:focus-visible { outline: 2px solid var(--theme-accent, #087238); outline-offset: 3px; }
 .theme-toggle svg { flex-shrink: 0; }
 
 /* Form fields and native select menus follow the selected theme. */

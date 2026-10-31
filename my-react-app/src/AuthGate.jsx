@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import App from './App'
 import { supabase } from './lib/supabase'
 import './DemoLogin.css'
+import BrandLogo from './BrandLogo'
 
 const demoAccounts = [
   { role: 'Operator', email: 'demo.operator@inventoscan.test', password: 'InventoOperator2026!' },
@@ -84,7 +85,7 @@ export default function AuthGate() {
   if (session) return <App />
   return <div className="login-screen"><div className="login-card">
     <form onSubmit={registering ? register : event => { event.preventDefault(); signIn({ email, password }) }}>
-      <div className="login-logo">⌁</div><p className="eyebrow">INVENTORY SYSTEM</p>
+      <div className="login-brand"><BrandLogo className="login-logo"/><div><strong className="login-brand-name">VSU InventoScan</strong><p className="eyebrow">INVENTORY SYSTEM</p></div></div>
       <h2>{registering ? 'Create an account' : 'Welcome back'}</h2>
       <p>{registering ? 'Request access to continue.' : 'Sign in to continue.'}</p>
       {error && <div className="login-error" role="alert">{error}</div>}

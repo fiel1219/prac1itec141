@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import './App.css'
 import './Theme.css'
+import BrandLogo from './BrandLogo'
 import { fetchShelves, fetchLaboratories, fetchTransactions, fetchApprovals, isSupabaseConfigured, supabase } from './lib/supabase'
 import { InventoryLabels, InventoryScanner } from './InventoryQR'
 import { AddShelfDialog, ItemManagement, Reports } from './InventoryFeatures'
@@ -146,7 +147,7 @@ export default function App() {
     </MainBrand>
     <aside id="app-sidebar" className={mobile ? 'side open' : 'side'}>
       {mobile && <button type="button" className="sidebar-close" aria-label="Close sidebar" title="Close sidebar" onClick={() => { setMobile(false); navigationToggle.current?.focus() }}><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>}
-      <div className="brand"><b>⌁</b><span><strong>VSU InventoScan</strong><small>Inventory system</small></span></div><div className="sidebar-user"><div className="user-avatar">{(currentUser?.full_name || 'U').charAt(0).toUpperCase()}</div><div><b>{currentUser?.full_name || 'Loading user...'}</b><small>{currentUser?.email || ''}</small><span>{currentUser ? userRoleLabel(currentUser,userAssignments,laboratoryId) : 'Loading role…'}{currentUser?.role !== 'Admin' && userAssignments.some(row=>row.user_id===currentUser?.id && row.laboratory_id===laboratoryId) && selectedLaboratory && ` · ${selectedLaboratory.name}`}</span></div></div><div className="sidebar-navigation">
+      <div className="brand"><BrandLogo/><span><strong>VSU InventoScan</strong><small>Inventory system</small></span></div><div className="sidebar-user"><div className="user-avatar">{(currentUser?.full_name || 'U').charAt(0).toUpperCase()}</div><div><b>{currentUser?.full_name || 'Loading user...'}</b><small>{currentUser?.email || ''}</small><span>{currentUser ? userRoleLabel(currentUser,userAssignments,laboratoryId) : 'Loading role…'}{currentUser?.role !== 'Admin' && userAssignments.some(row=>row.user_id===currentUser?.id && row.laboratory_id===laboratoryId) && selectedLaboratory && ` · ${selectedLaboratory.name}`}</span></div></div><div className="sidebar-navigation">
       {compactNavigation && <div className="sidebar-laboratories">{laboratoryControls}</div>}
       {navSections.map(section =>
       <section className="sidebar-section" key={section.title} aria-label={section.title}>
@@ -199,7 +200,7 @@ export default function App() {
 
 function MainBrand({ children, theme, onToggleTheme }) {
   const dark = theme === 'dark'
-  return <div className="main-brand-user"><div className="brand"><b>⌁</b><span><strong>VSU InventoScan</strong><small>Inventory system</small></span></div><div className="header-controls">{children}</div>
+  return <div className="main-brand-user"><div className="brand"><BrandLogo/><span><strong>VSU InventoScan</strong><small>Inventory system</small></span></div><div className="header-controls">{children}</div>
     <button type="button" className="theme-toggle" onClick={onToggleTheme} aria-label={`Switch to ${dark ? 'light' : 'dark'} mode`} aria-pressed={dark} title={`Switch to ${dark ? 'light' : 'dark'} mode`}>
       <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
         {dark ? <><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5"/></> : <path d="M20.7 13.1A9 9 0 0 1 10.9 3.3 9 9 0 1 0 20.7 13.1Z"/>}

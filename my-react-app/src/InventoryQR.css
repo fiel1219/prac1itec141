@@ -3,7 +3,7 @@
 .inventory-qr-modal.shelf-inventory-modal{width:min(860px,100%);padding:20px}
 .shelf-inventory-columns{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:16px;text-align:left}
 .shelf-inventory-columns>section{min-width:0;border:1px solid var(--theme-border, #e4e7ef);border-radius:10px;padding:12px}
-.shelf-inventory-columns h3{margin:0 0 8px;padding:8px 10px;border-radius:7px;font-size:14px;background:var(--theme-surface-accent, #eeedff);color:var(--theme-accent, #5948ce)}
+.shelf-inventory-columns h3{margin:0 0 8px;padding:8px 10px;border-radius:7px;font-size:14px;background:var(--theme-surface-accent, #fff5c2);color:var(--theme-accent, #087238)}
 .shelf-consumable-column>h3{background:var(--theme-success-bg, #e5f8ee);color:var(--theme-success-text, #218455)}
 .shelf-inventory-columns .equipment-label-list{margin-top:0}
 .shelf-inventory-columns .equipment-label-list>div{display:flex;align-items:center;gap:8px;flex-wrap:nowrap;padding:10px 0}
@@ -62,10 +62,10 @@
 .inventory-selection-toolbar>span{font-size:11px;color:var(--theme-muted, #626b80);margin-right:auto}
 .inventory-qr-modal .inventory-selection-help{margin:8px 0 0;text-align:left;font-size:11px}
 .shelf-inventory-columns .inventory-item-select{display:flex;align-items:center;gap:6px;margin:0;min-width:0;color:inherit;font-size:14px;line-height:1.25}
-.shelf-inventory-columns .inventory-item-select input{display:inline-block;width:14px;height:14px;margin:0;padding:0;flex-shrink:0;accent-color:#6856e8}
+.shelf-inventory-columns .inventory-item-select input{display:inline-block;width:14px;height:14px;margin:0;padding:0;flex-shrink:0;accent-color:var(--brand-primary)}
 .shelf-inventory-columns .inventory-item-select input:disabled{cursor:not-allowed}
 .shelf-inventory-columns .inventory-item-select b{overflow-wrap:anywhere}
-.shelf-inventory-columns .inventory-item-selected{background:var(--theme-surface-accent, #f6f5ff)}
+.shelf-inventory-columns .inventory-item-selected{background:var(--theme-surface-accent, #fff5c2)}
 .bulk-item-summary{max-height:140px;overflow:auto;margin:0 0 12px;padding-left:20px;font-size:12px;line-height:1.7;overflow-wrap:anywhere}
 @media(max-width:480px){.equipment-label-list>div{display:block}.equipment-label-list .unit-action-buttons{max-width:none;justify-content:flex-start;margin-top:12px}}
 .inventory-scanner>.connection-error,.inventory-scanner>.success-message{margin-top:18px}

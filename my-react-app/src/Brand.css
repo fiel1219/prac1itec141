@@ -1,0 +1,46 @@
+:root {
+  --brand-green: #087238;
+  --brand-yellow: #f4cb24;
+  --brand-ink: #143c25;
+  --brand-heading: #0b6233;
+  --brand-link: #087238;
+  --brand-focus: #937000;
+  --brand-primary: #087238;
+  --brand-primary-hover: #06592c;
+  --brand-primary-text: #ffffff;
+  --brand-soft-green: #e8f5ec;
+  --brand-soft-yellow: #fff5c2;
+  --theme-text: #20382a;
+  --theme-muted: #5b7062;
+  --theme-accent: var(--brand-link);
+  --theme-surface-accent: var(--brand-soft-yellow);
+}
+
+.app[data-theme="dark"] {
+  --brand-heading: #a6e5b8;
+  --brand-link: #f6d34f;
+  --brand-focus: #f6d34f;
+  --brand-primary: #f4cb24;
+  --brand-primary-hover: #ffdc50;
+  --brand-primary-text: #143c25;
+  --brand-soft-green: #193b27;
+  --brand-soft-yellow: #393219;
+}
+
+.brand-logo { display: block; width: 40px; height: 40px; flex-shrink: 0; object-fit: contain; border-radius: 8px; }
+.brand strong, .login-brand-name, .card h2, .card h3, .stat strong { color: var(--brand-heading); }
+.login-brand { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; }
+.login-brand .login-logo { width: 56px; height: 56px; border-radius: 10px; }
+.login-brand-name { display: block; font-size: 16px; }
+.login-card .login-brand .eyebrow { margin: 4px 0 0; color: var(--brand-link); font-size: 10px; letter-spacing: .08em; }
+.login-card h2 { color: var(--brand-heading); }
+.login-card .demo-role { color: var(--brand-heading); }
+.side nav button.active { box-shadow: inset 3px 0 0 var(--brand-yellow); }
+.app .brand small { color: var(--theme-muted); }
+.stat .c0 { background: var(--brand-soft-yellow); color: var(--brand-link); }
+.stat .c2 { background: var(--brand-soft-yellow); color: var(--brand-link); }
+.primary:hover:not(:disabled), .cardhead .shelf-add-button:hover:not(:disabled), .inventory-feature .cardhead button.primary:hover:not(:disabled) { background: var(--brand-primary-hover); color: var(--brand-primary-text); }
+.primary:focus-visible { outline: 2px solid var(--brand-focus); outline-offset: 3px; }
+.login-screen { background: linear-gradient(135deg, #e9f5ec, #fff8d8); }
+.login-card { border-top: 4px solid var(--brand-green); }
+::selection { background: var(--brand-yellow); color: var(--brand-ink); }
