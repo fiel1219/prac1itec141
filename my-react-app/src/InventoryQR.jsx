@@ -37,7 +37,7 @@ function QRLabel({ shelf, unit }) {
     <button className="primary full" onClick={download} disabled={!image}>Download QR</button></>
 }
 
-export function InventoryLabels({ shelf, shelves = [], close, onChange, migrationRequired = false, unitActionsRequired = false, permanentDeleteRequired = false, itemNamesRequired = false, itemCategoriesRequired = false }) {
+export function InventoryLabels({ shelf, shelves = [], close, onChange, canOperate = false, canManage = false, migrationRequired = false, unitActionsRequired = false, permanentDeleteRequired = false, itemNamesRequired = false, itemCategoriesRequired = false }) {
   const [unitId, setUnitId] = useState(shelf.qrUnit?.id || null)
   const [deleting, setDeleting] = useState(false), [deleteError, setDeleteError] = useState('')
   const [action, setAction] = useState(null), [destinationId, setDestinationId] = useState(''), [reason, setReason] = useState('')
@@ -57,10 +57,10 @@ export function InventoryLabels({ shelf, shelves = [], close, onChange, migratio
   const units = activeUnits(shelf).filter(item => !removedIds.includes(item.id)).map(item => ({ ...item,
     ...(unitOverrides[item.id]?.source === shelf.inventory_units ? unitOverrides[item.id].values : {}) }))
   const unit = units.find(item => item.id === unitId)
-  const actionUnit = units.find(item => item.id === action?.id)
+  const actionUnit = (action?.type === 'return' ? !canOperate : !canManage) ? null : units.find(item => item.id === action?.id)
   const equipmentUnits = units.filter(item => !isConsumableUnit(item, shelf))
   const consumableItems = shelfItems({ ...shelf, inventory_units: units.filter(item => isConsumableUnit(item, shelf)) })
-  const actionConsumable = consumableItems.find(item => item.key === consumableAction?.key)
+  const actionConsumable = canManage && consumableItems.find(item => item.key === consumableAction?.key)
   const destinations = shelves.filter(item => item.id !== shelf.id && item.status === 'active')
   const hasStock = stockQuantity({ ...shelf,inventory_units:units }) > 0
   const busy = deleting || savingUnit || loadingReturn || savingStock
@@ -71,22 +71,25 @@ export function InventoryLabels({ shelf, shelves = [], close, onChange, migratio
   const selectedEquipment = selectableEquipment.filter(item => selectedKeys.includes(`equipment:${item.id}`))
   const selectedConsumables = selectableConsumables.filter(item => selectedKeys.includes(item.key))
   const selectedCount = selectedEquipment.length + selectedConsumables.length
-  const selectionDisabled = busy || actionsUnavailable || !!bulkAction
+  const selectionDisabled = !canManage || busy || actionsUnavailable || !!bulkAction
   const deleteShelfHelp = migrationRequired ? 'Complete the database setup to delete shelves.' : permanentDeleteRequired ? 'Complete the permanent deletion database update shown on the main page.' : hasStock ? 'Move or delete the remaining items to empty this shelf. Return borrowed equipment first.' : ''
   function requestClose() { if (!busy) close() }
   function openUnitAction(type, item) {
+    if (type === 'return' ? !canOperate : !canManage) return
     setBulkAction(null)
     setAddingItems(false); setStockError(''); setConsumableAction(null)
     setAction({ type, id: item.id }); setDestinationId(''); setReason(''); setUnitError(''); setSuccess(''); setUnitId(null)
     body.current?.scrollTo({ top: 0 })
   }
   function openAddItems() {
+    if (!canManage) return
     setBulkAction(null); setSelectedKeys([])
     setStockItem(''); setDescription(''); setInventoryKind('equipment'); setConsumableAction(null)
     setAddingItems(true); setQuantity(1); setStockError(''); setSuccess(''); setAction(null); setUnitId(null); setUnitError(''); setDeleteError('')
     body.current?.scrollTo({ top: 0 })
   }
   function openConsumableAction(type, item) {
+    if (!canManage) return
     setBulkAction(null)
     setConsumableAction({ type, key:item.key }); setAction(null); setUnitId(null)
     setDestinationId(''); setReason(''); setUnitError(''); setSuccess(''); setStockError('')
@@ -97,7 +100,7 @@ export function InventoryLabels({ shelf, shelves = [], close, onChange, migratio
     setSelectedKeys(previous => previous.includes(key) ? previous.filter(value => value !== key) : [...previous,key])
   }
   function openBulkAction(type) {
-    if (busy || actionsUnavailable || !selectedCount || (type === 'delete' && permanentDeleteRequired)) return
+    if (!canManage || busy || actionsUnavailable || !selectedCount || (type === 'delete' && permanentDeleteRequired)) return
     setBulkAction({ type, equipment:selectedEquipment, consumables:selectedConsumables })
     setAction(null); setConsumableAction(null); setUnitId(null)
     setDestinationId(''); setReason(''); setUnitError(''); setSuccess(''); setStockError('')
@@ -105,7 +108,7 @@ export function InventoryLabels({ shelf, shelves = [], close, onChange, migratio
   }
   async function saveBulkAction(event) {
     event.preventDefault()
-    if (busy || !bulkAction || actionsUnavailable || (bulkAction.type === 'delete' && permanentDeleteRequired)) return
+    if (!canManage || busy || !bulkAction || actionsUnavailable || (bulkAction.type === 'delete' && permanentDeleteRequired)) return
     const destination = destinations.find(item => item.id === destinationId)
     setUnitError(''); setSuccess('')
     if (bulkAction.type === 'move' && !destination) { setUnitError('Choose a destination shelf.'); return }
@@ -133,7 +136,7 @@ export function InventoryLabels({ shelf, shelves = [], close, onChange, migratio
   }
   async function saveConsumableAction(event) {
     event.preventDefault()
-    if (busy || !actionConsumable || actionsUnavailable || (consumableAction.type === 'delete' && permanentDeleteRequired)) return
+    if (!canManage || busy || !actionConsumable || actionsUnavailable || (consumableAction.type === 'delete' && permanentDeleteRequired)) return
     setUnitError(''); setSuccess('')
     const destination = destinations.find(item => item.id === destinationId)
     if (consumableAction.type === 'move' && !destination) { setUnitError('Choose a destination shelf.'); return }
@@ -159,7 +162,7 @@ export function InventoryLabels({ shelf, shelves = [], close, onChange, migratio
   }
   async function addItems(event) {
     event.preventDefault()
-    if (busy || migrationRequired || itemNamesRequired || itemCategoriesRequired) return
+    if (!canManage || busy || migrationRequired || itemNamesRequired || itemCategoriesRequired) return
     const count = Number(quantity)
     setStockError(''); setSuccess('')
     if (!Number.isInteger(count) || count < 1 || count > 1000) { setStockError('Enter a whole-number quantity from 1 to 1000.'); return }
@@ -177,6 +180,7 @@ export function InventoryLabels({ shelf, shelves = [], close, onChange, migratio
     finally { setSavingStock(false) }
   }
   async function openReturnAction(item) {
+    if (!canOperate) return
     openUnitAction('return', item)
     setReturnLoans([]); setReturnLoanId(''); setReturnCondition('good'); setPhysicalReturn(false); setLoadingReturn(true)
     try {
@@ -229,7 +233,7 @@ export function InventoryLabels({ shelf, shelves = [], close, onChange, migratio
     finally { setSavingUnit(false) }
   }
   async function deleteShelf() {
-    if (busy || addingItems || hasStock || migrationRequired || permanentDeleteRequired) return
+    if (!canManage || busy || addingItems || hasStock || migrationRequired || permanentDeleteRequired) return
     if (!window.confirm(`Permanently delete shelf "${shelf.name}" (${shelf.code}) from the database? This cannot be undone. Historical transaction records will remain.`)) return
     setDeleting(true); setDeleteError('')
     try {
@@ -246,7 +250,7 @@ export function InventoryLabels({ shelf, shelves = [], close, onChange, migratio
     {unitError && <div role="alert" className="connection-error">{unitError}</div>}
     {success && <div role="status" className="success-message">{success}</div>}
     {stockError && <div role="alert" className="connection-error">{stockError}</div>}
-    {addingItems && <form className="unit-action-form" aria-label="Add items" onSubmit={addItems}>
+    {canManage && addingItems && <form className="unit-action-form" aria-label="Add items" onSubmit={addItems}>
       <h3>Add items to {shelf.name}</h3>
       <label>Item name<input required maxLength={120} autoFocus disabled={busy} list="shelf-item-names" value={stockItem} onChange={event => setStockItem(event.target.value)}/><datalist id="shelf-item-names">{shelfItems(shelf).filter(item => item.kind === inventoryKind).map(item => <option key={item.key} value={item.name}/>)}</datalist></label>
       <label>Inventory category<select aria-label="Inventory category" required disabled={busy} value={inventoryKind} onChange={event => setInventoryKind(event.target.value)}><option value="equipment">Equipment · QR per unit</option><option value="consumable">Consumables · QR per item</option></select></label>
@@ -254,20 +258,20 @@ export function InventoryLabels({ shelf, shelves = [], close, onChange, migratio
       <label>Description (optional)<textarea aria-label="Description (optional)" maxLength={1000} disabled={busy} value={description} onChange={event => setDescription(event.target.value)}/></label>
       <div className="unit-action-buttons"><button className="primary" disabled={busy}>{savingStock ? 'Adding…' : 'Confirm add'}</button><button type="button" className="secondary" disabled={busy} onClick={() => { setAddingItems(false); setStockError('') }}>Cancel</button></div>
     </form>}
-    {!addingItems && (unit ? <><button className="secondary" onClick={() => setUnitId(null)}>All items</button><QRLabel shelf={shelf} unit={unit}/>
+    {(!canManage || !addingItems) && (unit ? <><button className="secondary" onClick={() => setUnitId(null)}>All items</button><QRLabel shelf={shelf} unit={unit}/>
     </> : <>
       <h2>{shelf.name} · items</h2>
       {shelf.description && <p className="item-description">{shelf.description}</p>}
-      {actionsUnavailable && <p className="unit-setup-help">Complete the unit management database setup shown on the main page to enable Move and Delete.</p>}
-      {!!selectableKeys.length && <div className="inventory-selection-toolbar" role="group" aria-label="Item selection">
+      {canManage && actionsUnavailable && <p className="unit-setup-help">Complete the unit management database setup shown on the main page to enable Move and Delete.</p>}
+      {canManage && !!selectableKeys.length && <div className="inventory-selection-toolbar" role="group" aria-label="Item selection">
         <button type="button" className="secondary" disabled={selectionDisabled || selectedCount === selectableKeys.length} onClick={() => setSelectedKeys(selectableKeys)}>Select all items</button>
         <span role="status">{selectedCount} selected</span>
         {!!selectedCount && <button type="button" className="secondary" disabled={selectionDisabled} onClick={() => setSelectedKeys([])}>Clear selection</button>}
         <button type="button" className="secondary" disabled={busy || actionsUnavailable || !selectedCount || !!bulkAction || !destinations.length} onClick={() => openBulkAction('move')}>Move selected</button>
         <button type="button" className="delete-unit-button" disabled={busy || actionsUnavailable || permanentDeleteRequired || !selectedCount || !!bulkAction} onClick={() => openBulkAction('delete')}>Delete selected</button>
       </div>}
-      {equipmentUnits.some(item => item.status === 'borrowed') && <p className="inventory-selection-help">Return borrowed equipment before selecting it.</p>}
-      {bulkAction && <form className="unit-action-form" aria-label={`${bulkAction.type === 'move' ? 'Move' : 'Delete'} selected items`} onSubmit={saveBulkAction}>
+      {canManage && equipmentUnits.some(item => item.status === 'borrowed') && <p className="inventory-selection-help">Return borrowed equipment before selecting it.</p>}
+      {canManage && bulkAction && <form className="unit-action-form" aria-label={`${bulkAction.type === 'move' ? 'Move' : 'Delete'} selected items`} onSubmit={saveBulkAction}>
         <h3>{bulkAction.type === 'move' ? 'Move' : 'Delete'} {bulkAction.equipment.length + bulkAction.consumables.length} selected item(s)</h3>
         <ul className="bulk-item-summary">
           {bulkAction.equipment.map(item => <li key={item.id}>{unitName(item)} · {itemName(item,shelf)}</li>)}
@@ -304,27 +308,27 @@ export function InventoryLabels({ shelf, shelves = [], close, onChange, migratio
       </form>}
       <div className="shelf-inventory-columns"><section className="shelf-equipment-column" aria-label="Equipment"><h3>Equipment</h3>
       {!equipmentUnits.length && <p className="inventory-column-empty">No equipment.</p>}
-      <div className="equipment-label-list">{equipmentUnits.map(item => <div key={item.id} className={selectedKeys.includes(`equipment:${item.id}`) ? 'inventory-item-selected' : ''}><span><label className="inventory-item-select"><input type="checkbox" aria-label={`Select ${unitName(item)} · ${itemName(item,shelf)}`} disabled={selectionDisabled || item.status === 'borrowed'} checked={item.status !== 'borrowed' && selectedKeys.includes(`equipment:${item.id}`)} onChange={() => toggleSelection(`equipment:${item.id}`)}/><b>{unitName(item)}</b></label><small className="equipment-item-name">{itemName(item, shelf)}</small>{item.description && <small className="item-description">{item.description}</small>}<small>{item.status.replaceAll('_', ' ')} · {item.condition}</small>{item.status === 'borrowed' && <small>Return this equipment before moving or deleting it.</small>}</span>
-        <div className="unit-action-buttons"><button type="button" className="secondary" disabled={busy} onClick={() => { setUnitId(item.id); setAction(null); setConsumableAction(null) }}>View QR</button>{item.status === 'borrowed' && <button type="button" className="secondary" aria-label={`Return ${unitName(item)}`} disabled={busy || migrationRequired} onClick={() => openReturnAction(item)}>Return</button>}<button type="button" className="secondary" aria-label={`Move ${unitName(item)}`} disabled={busy || actionsUnavailable || item.status === 'borrowed'} onClick={() => openUnitAction('move', item)}>Move</button><button type="button" className="delete-unit-button" aria-label={`Delete ${unitName(item)}`} disabled={busy || actionsUnavailable || permanentDeleteRequired || item.status === 'borrowed'} onClick={() => openUnitAction('delete', item)}>Delete</button></div>
+      <div className="equipment-label-list">{equipmentUnits.map(item => <div key={item.id} className={selectedKeys.includes(`equipment:${item.id}`) ? 'inventory-item-selected' : ''}><span><label className="inventory-item-select">{canManage && <input type="checkbox" aria-label={`Select ${unitName(item)} · ${itemName(item,shelf)}`} disabled={selectionDisabled || item.status === 'borrowed'} checked={item.status !== 'borrowed' && selectedKeys.includes(`equipment:${item.id}`)} onChange={() => toggleSelection(`equipment:${item.id}`)}/>}<b>{unitName(item)}</b></label><small className="equipment-item-name">{itemName(item, shelf)}</small>{item.description && <small className="item-description">{item.description}</small>}<small>{item.status.replaceAll('_', ' ')} · {item.condition}</small>{item.status === 'borrowed' && <small>Return this equipment before moving or deleting it.</small>}</span>
+        <div className="unit-action-buttons"><button type="button" className="secondary" disabled={busy} onClick={() => { setUnitId(item.id); setAction(null); setConsumableAction(null) }}>View QR</button>{canOperate && item.status === 'borrowed' && <button type="button" className="secondary" aria-label={`Return ${unitName(item)}`} disabled={busy || migrationRequired} onClick={() => openReturnAction(item)}>Return</button>}{canManage && <button type="button" className="secondary" aria-label={`Move ${unitName(item)}`} disabled={busy || actionsUnavailable || item.status === 'borrowed'} onClick={() => openUnitAction('move', item)}>Move</button>}{canManage && <button type="button" className="delete-unit-button" aria-label={`Delete ${unitName(item)}`} disabled={busy || actionsUnavailable || permanentDeleteRequired || item.status === 'borrowed'} onClick={() => openUnitAction('delete', item)}>Delete</button>}</div>
       </div>)}</div></section>
       <section className="shelf-consumable-column" aria-label="Consumables"><h3>Consumables</h3>
       {!consumableItems.length && <p className="inventory-column-empty">No consumables.</p>}
       <div className="consumable-item-list">{consumableItems.map((item,index) => <article className={'consumable-item-card' + (selectedKeys.includes(item.key) ? ' inventory-item-selected' : '')} key={item.key}><div className="consumable-item-details">
-        <label className="inventory-item-select"><input type="checkbox" aria-label={`Select ${itemLabel(item.units[0],shelf)} · ${item.name}`} disabled={selectionDisabled || !selectableConsumables.includes(item)} checked={selectableConsumables.includes(item) && selectedKeys.includes(item.key)} onChange={() => toggleSelection(item.key)}/><b>{item.units[0].consumable_number ? itemLabel(item.units[0],shelf) : `Consumable ${String(index+1).padStart(3,'0')}`}</b></label>
+        <label className="inventory-item-select">{canManage && <input type="checkbox" aria-label={`Select ${itemLabel(item.units[0],shelf)} · ${item.name}`} disabled={selectionDisabled || !selectableConsumables.includes(item)} checked={selectableConsumables.includes(item) && selectedKeys.includes(item.key)} onChange={() => toggleSelection(item.key)}/>}<b>{item.units[0].consumable_number ? itemLabel(item.units[0],shelf) : `Consumable ${String(index+1).padStart(3,'0')}`}</b></label>
         <strong>{item.name}</strong>
         {item.units[0].description && <small className="item-description">{item.units[0].description}</small>}
         <span className="consumable-quantity">Quantity: <b>{item.quantity}</b></span>
         {item.available !== item.quantity && <small>{item.available} available</small>}
         </div><div className="unit-action-buttons">
           <button type="button" className="secondary" aria-label={`View QR for ${itemLabel(item.units[0],shelf)}`} disabled={busy} onClick={() => { setUnitId(item.units[0].id); setAction(null); setConsumableAction(null) }}>View QR</button>
-          <button type="button" className="secondary" aria-label={`Move ${itemLabel(item.units[0],shelf)}`} disabled={busy || actionsUnavailable} onClick={() => openConsumableAction('move',item)}>Move</button>
-          <button type="button" className="delete-unit-button" aria-label={`Delete ${itemLabel(item.units[0],shelf)}`} disabled={busy || actionsUnavailable || permanentDeleteRequired} onClick={() => openConsumableAction('delete',item)}>Delete</button>
+          {canManage && <button type="button" className="secondary" aria-label={`Move ${itemLabel(item.units[0],shelf)}`} disabled={busy || actionsUnavailable} onClick={() => openConsumableAction('move',item)}>Move</button>}
+          {canManage && <button type="button" className="delete-unit-button" aria-label={`Delete ${itemLabel(item.units[0],shelf)}`} disabled={busy || actionsUnavailable || permanentDeleteRequired} onClick={() => openConsumableAction('delete',item)}>Delete</button>}
         </div>
       </article>)}</div>
       </section></div>
     </>)}
     </div>
-    {!addingItems && <div className="inventory-qr-actions">
+    {canManage && !addingItems && <div className="inventory-qr-actions">
       {deleteError && <div role="alert" className="connection-error">{deleteError}</div>}
       {deleteShelfHelp && <p id="delete-shelf-help">{deleteShelfHelp}</p>}
       <div className="inventory-qr-action-buttons">

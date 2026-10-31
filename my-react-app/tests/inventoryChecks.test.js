@@ -4,11 +4,11 @@ import { readFile } from 'node:fs/promises'
 import { PGlite } from '@electric-sql/pglite'
 import { canCheckInventory, checkSubmission, inspectionItems, loadInventoryChecks } from '../src/lib/inventoryChecks.js'
 
-test('inventory checks allow active System Admins everywhere and laboratory staff only where assigned', () => {
+test('inventory checks allow only the active assigned Laboratory Admin', () => {
   const memberships = [{user_id:'u', laboratory_id:'science', role:'Laboratory Admin'}]
   assert.equal(canCheckInventory({id:'u',status:'active',role:'Operator'}, memberships, 'science'), true)
-  assert.equal(canCheckInventory({id:'u',status:'active',role:'Operator'}, [{...memberships[0],role:'Laboratory Operator'}], 'science'), true)
-  assert.equal(canCheckInventory({id:'u',status:'active',role:'Admin'}, [], 'science'), true)
+  assert.equal(canCheckInventory({id:'u',status:'active',role:'Operator'}, [{...memberships[0],role:'Laboratory Operator'}], 'science'), false)
+  assert.equal(canCheckInventory({id:'u',status:'active',role:'Admin'}, [], 'science'), false)
   assert.equal(canCheckInventory({id:'u',status:'disabled',role:'Admin'}, [], 'science'), false)
   assert.equal(canCheckInventory({id:'u',status:'active',role:'Admin'}, [], null), false)
   assert.equal(canCheckInventory({id:'u',status:'disabled'}, memberships, 'science'), false)

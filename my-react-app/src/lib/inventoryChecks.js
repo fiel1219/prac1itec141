@@ -1,10 +1,9 @@
 import { activeUnits, itemName, recordQuantity } from './inventory.js'
-import { laboratoryRoles } from './userLaboratories.js'
+import { navigationPages } from './navigationAccess.js'
 import { itemKind } from './inventoryQR.js'
 
 export function canCheckInventory(user, assignments, laboratoryId) {
-  return user?.status === 'active' && Boolean(laboratoryId) && (user.role === 'Admin' || assignments.some(row =>
-    row.user_id === user.id && row.laboratory_id === laboratoryId && laboratoryRoles.includes(row.role)))
+  return navigationPages(user, assignments, laboratoryId).includes('Inventory Checks')
 }
 
 export function inspectionItems(shelf) {

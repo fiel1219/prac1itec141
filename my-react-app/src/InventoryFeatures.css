@@ -11,3 +11,8 @@
 .item-list-section{margin-top:24px}.item-list-section>h3{display:flex;align-items:center;gap:8px;font-size:16px;margin:0}.item-list-section>h3>span{font-size:11px;font-weight:400;color:var(--theme-muted, #737b91)}.item-list-empty{font-size:12px;color:var(--theme-muted, #737b91);padding:12px 0;margin:0}
 .inventory-feature.item-management .inventory-table table{min-width:680px}.inventory-feature.item-management .inventory-table th,.inventory-feature.item-management .inventory-table td{white-space:normal}.inventory-feature.item-management .inventory-table td:last-child{min-width:165px}.item-management .inventory-table{margin-top:12px}.item-management .inventory-buttons button{padding:8px 10px}
 .inventory-feature.item-management .inventory-table td.item-description{white-space:pre-wrap}
+.inventory-feature .inventory-summary-table table{width:max-content;min-width:100%;max-width:none;table-layout:auto}
+.inventory-feature .inventory-summary-table th,.inventory-feature .inventory-summary-table td{min-width:110px;max-width:none;padding:12px 14px;white-space:nowrap;overflow-wrap:normal;word-break:normal}
+.inventory-feature .inventory-summary-table th:nth-child(1),.inventory-feature .inventory-summary-table td:nth-child(1){min-width:130px}
+.inventory-feature .inventory-summary-table th:nth-child(2),.inventory-feature .inventory-summary-table td:nth-child(2),.inventory-feature .inventory-summary-table th:nth-child(3),.inventory-feature .inventory-summary-table td:nth-child(3){min-width:180px}
+.inventory-feature .inventory-summary-table th:nth-child(4),.inventory-feature .inventory-summary-table td:nth-child(4){min-width:130px}
