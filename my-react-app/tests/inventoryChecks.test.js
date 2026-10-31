@@ -4,11 +4,13 @@ import { readFile } from 'node:fs/promises'
 import { PGlite } from '@electric-sql/pglite'
 import { canCheckInventory, checkSubmission, inspectionItems, loadInventoryChecks } from '../src/lib/inventoryChecks.js'
 
-test('inventory check visibility requires an active membership in the selected laboratory', () => {
+test('inventory checks allow active System Admins everywhere and laboratory staff only where assigned', () => {
   const memberships = [{user_id:'u', laboratory_id:'science', role:'Laboratory Admin'}]
   assert.equal(canCheckInventory({id:'u',status:'active',role:'Operator'}, memberships, 'science'), true)
   assert.equal(canCheckInventory({id:'u',status:'active',role:'Operator'}, [{...memberships[0],role:'Laboratory Operator'}], 'science'), true)
-  assert.equal(canCheckInventory({id:'u',status:'active',role:'Admin'}, [], 'science'), false)
+  assert.equal(canCheckInventory({id:'u',status:'active',role:'Admin'}, [], 'science'), true)
+  assert.equal(canCheckInventory({id:'u',status:'disabled',role:'Admin'}, [], 'science'), false)
+  assert.equal(canCheckInventory({id:'u',status:'active',role:'Admin'}, [], null), false)
   assert.equal(canCheckInventory({id:'u',status:'disabled'}, memberships, 'science'), false)
   assert.equal(canCheckInventory({id:'u',status:'active'}, memberships, 'chemistry'), false)
   assert.equal(canCheckInventory(null, memberships, 'science'), false)
@@ -26,7 +28,7 @@ test('inspection rows include borrowed and missing stock as skipped and require 
   ]}
   const items = inspectionItems(shelf)
   assert.equal(items.length,5)
-  assert.deepEqual(items.filter(item=>!item.skip_reason).map(item=>item.id).sort(), ['good','stock'])
+  assert.deepEqual(items.filter(item=>!item.skip_reason).map(item=>item.id).sort(), ['good','stock','zero'])
   const payload=checkSubmission(items,{good:{condition:'damaged',notes:' cracked '}})
   assert.equal(payload.find(item=>item.unit_id==='good').notes,'cracked')
   assert.equal(payload.find(item=>item.unit_id==='stock').expected_quantity,12)
@@ -97,7 +99,8 @@ test('shelf checks enforce laboratory roles, save all results atomically, preser
     await assert.rejects(save(science,shelf,initial.map((row,index)=>index===0?{...row,condition:''}:row)),/Good or Damaged/)
     const borrowedPayload=[...initial.slice(1),{unit_id:equipment[2].id,condition:'damaged',expected_status:'borrowed',expected_condition:'good',expected_quantity:1}]
     await assert.rejects(save(science,shelf,borrowedPayload),/changed|borrowed/)
-    for(const name of ['system','other','disabled']){await login(name);await assert.rejects(save(),/Only assigned/)}
+    for(const name of ['other','disabled']){await login(name);await assert.rejects(save(),/Only assigned/)}
+    await login('system');await assert.rejects(save(science,shelf,initial.slice(1)),/not reviewed/)
     await login('admin')
     const checkId=await save()
     const after=await snapshot()
@@ -116,7 +119,7 @@ test('shelf checks enforce laboratory roles, save all results atomically, preser
     await assert.rejects(query(`insert into inventory_checks(shelf_id,performed_by) values($1,'Fake')`,[shelf]),/permission denied/)
     await assert.rejects(query(`update inventory_checks set damaged_units=0 where id=$1`,[checkId]),/permission denied/)
     await login('other');assert.equal((await query('select * from inventory_checks')).rows.length,0)
-    await login('system');assert.equal((await query('select * from inventory_checks')).rows.length,0)
+    await login('system');assert.equal((await query('select * from inventory_checks')).rows.length,1)
     await login('operator')
     const stale=await payload()
     await query(`select inventory_receive_categorized_items($1,'Gloves','consumable',1,'')`,[shelf])
@@ -128,6 +131,11 @@ test('shelf checks enforce laboratory roles, save all results atomically, preser
     const revised=await payload();await save(science,shelf,revised)
     await db.exec('reset role');await db.exec(await file('inventory_checks.sql'))
     assert.equal((await query('select * from inventory_checks')).rows.length,2)
+    await login('system')
+    const systemCheck=await save(science,shelf,await payload())
+    assert.equal((await query('select performed_by_user_id from inventory_checks where id=$1',[systemCheck])).rows[0].performed_by_user_id,ids.system)
+    assert.equal((await query('select * from laboratory_memberships where user_id=$1',[ids.system])).rows.length,0)
+    await db.exec('reset role')
     await query('delete from laboratory_memberships where user_id=$1',[ids.operator])
     await login('operator');await assert.rejects(save(science,shelf,revised),/Only assigned/)
     assert.equal((await query('select * from inventory_checks')).rows.length,0)

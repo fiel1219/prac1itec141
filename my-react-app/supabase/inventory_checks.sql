@@ -1,5 +1,5 @@
 -- Run after inventory_laboratories.sql and user_laboratories.sql. Safe to rerun.
--- Only active, explicitly assigned laboratory staff may read or save checks.
+-- Active System Admins and explicitly assigned laboratory staff may read or save checks.
 begin;
 alter table public.inventory_checks add column if not exists performed_by_user_id uuid;
 alter table public.inventory_checks add column if not exists item_results jsonb not null default '[]';
@@ -8,11 +8,11 @@ create index if not exists inventory_checks_lab_checked_idx on public.inventory_
 
 create or replace function public.inventory_can_check_laboratory(p_laboratory_id uuid) returns boolean
 language sql stable security definer set search_path=public as $$
-  select auth.uid() is not null and exists (
+  select auth.uid() is not null and p_laboratory_id is not null and (public.inventory_is_system_admin() or exists (
     select 1 from public.user_accounts u join public.laboratory_memberships m on m.user_id=u.id
     where lower(u.email)=lower(auth.jwt()->>'email') and u.status='active'
       and m.laboratory_id=p_laboratory_id and m.role in ('Laboratory Admin','Laboratory Operator')
-  )
+  ))
 $$;
 revoke all on function public.inventory_can_check_laboratory(uuid) from public,anon;
 grant execute on function public.inventory_can_check_laboratory(uuid) to authenticated;
@@ -40,15 +40,20 @@ declare source_shelf public.shelves; checker public.user_accounts; finding recor
   eligible_count integer; prior_action text; prior_notes text; note text;
 begin
   if not public.inventory_can_check_laboratory(p_laboratory_id) then
-    raise exception 'Only assigned Laboratory Admins and Laboratory Operators can check this laboratory';
+    raise exception 'Only assigned laboratory staff or System Admins can check this laboratory';
   end if;
   select * into source_shelf from public.shelves where id=p_shelf_id and laboratory_id=p_laboratory_id and status='active' for update;
   if not found then raise exception 'Shelf not found in this laboratory. Reload the shelf'; end if;
-  -- Keep the active account and its assignment stable for the entire save.
-  select u.* into checker from public.user_accounts u join public.laboratory_memberships m on m.user_id=u.id
-    where lower(u.email)=lower(auth.jwt()->>'email') and u.status='active' and m.laboratory_id=p_laboratory_id
-      and m.role in ('Laboratory Admin','Laboratory Operator') for share of u,m;
-  if not found then raise exception 'Your laboratory assignment changed. Sign in again'; end if;
+  -- Lock the account before checking its current role. Members additionally
+  -- lock their assignment; System Admins need no laboratory membership.
+  select u.* into checker from public.user_accounts u
+    where lower(u.email)=lower(auth.jwt()->>'email') and u.status='active' for share;
+  if not found then raise exception 'Your account changed. Sign in again'; end if;
+  if checker.role <> 'Admin' then
+    perform 1 from public.laboratory_memberships m where m.user_id=checker.id and m.laboratory_id=p_laboratory_id
+      and m.role in ('Laboratory Admin','Laboratory Operator') for share;
+    if not found then raise exception 'Your laboratory assignment changed. Sign in again'; end if;
+  end if;
   if p_items is null or jsonb_typeof(p_items)<>'array' or jsonb_array_length(p_items)=0 then
     raise exception 'Review the shelf items before saving a check';
   end if;

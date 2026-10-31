@@ -2,6 +2,7 @@ export const laboratoryRoles = ['Laboratory Admin', 'Laboratory Operator']
 
 export function assignedLaboratories(laboratories, user, assignments) {
   if (user?.status !== 'active') return []
+  if (user.role === 'Admin') return laboratories
   const ids = new Set(assignments.filter(row => row.user_id === user.id && laboratoryRoles.includes(row.role)).map(row => row.laboratory_id))
   return laboratories.filter(laboratory => ids.has(laboratory.id))
 }
@@ -35,10 +36,11 @@ export function filterUsers(users, assignments, query, role, laboratoryId) {
   return users.filter(user => {
     if (!`${user.full_name || ''} ${user.email || ''}`.toLowerCase().includes(search)) return false
     const memberships = assignments.filter(row => row.user_id === user.id)
-    if (role === 'System Admin') return user.role === 'Admin' && (!laboratoryId || memberships.some(row => row.laboratory_id === laboratoryId))
+    const hasLaboratoryAccess = user.role === 'Admin' && user.status === 'active' || memberships.some(row => row.laboratory_id === laboratoryId)
+    if (role === 'System Admin') return user.role === 'Admin' && (!laboratoryId || hasLaboratoryAccess)
     if (role === 'Unassigned') return user.role !== 'Admin' && !memberships.length && !laboratoryId
     return role === 'All'
-      ? !laboratoryId || memberships.some(row => row.laboratory_id === laboratoryId)
+      ? !laboratoryId || hasLaboratoryAccess
       : memberships.some(row => row.role === role && (!laboratoryId || row.laboratory_id === laboratoryId))
   })
 }

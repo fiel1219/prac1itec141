@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises'
 import { PGlite } from '@electric-sql/pglite'
 import { assignedLaboratories, resolveAssignedLaboratory, filterUsers, loadUserLaboratories, userRoleLabel } from '../src/lib/userLaboratories.js'
 
-test('laboratory selection is limited to active assignments and replaces inaccessible saved selections', () => {
+test('System Admins access all laboratories while other active users require valid assignments', () => {
   const laboratories=[{id:'science',name:'Science'},{id:'computer',name:'Computer'},{id:'chemistry',name:'Chemistry'}]
   const memberships=[
     {user_id:'u',laboratory_id:'computer',role:'Laboratory Admin'},
@@ -18,7 +18,10 @@ test('laboratory selection is limited to active assignments and replaces inacces
   assert.equal(resolveAssignedLaboratory(accessible,'chemistry'),'chemistry')
   assert.equal(resolveAssignedLaboratory(accessible,''),'computer')
   assert.equal(resolveAssignedLaboratory([],'science'),'')
-  assert.deepEqual(assignedLaboratories(laboratories,{...user,role:'Admin'},[]),[])
+  assert.deepEqual(assignedLaboratories(laboratories,{...user,role:'Admin'},[]),laboratories)
+  assert.deepEqual(assignedLaboratories(laboratories,{...user,role:'Admin'},memberships),laboratories)
+  assert.deepEqual(assignedLaboratories(laboratories,{...user,role:'Admin',status:'disabled'},memberships),[])
+  assert.deepEqual(assignedLaboratories(laboratories,user,[]),[])
   assert.deepEqual(assignedLaboratories(laboratories,{...user,status:'disabled'},memberships),[])
   assert.deepEqual(assignedLaboratories(laboratories,null,memberships),[])
   assert.deepEqual(assignedLaboratories(laboratories,user,[{user_id:'u',laboratory_id:'science',role:'Unknown'}]),[])
@@ -26,7 +29,7 @@ test('laboratory selection is limited to active assignments and replaces inacces
 })
 
 test('user filters preserve all accounts and match laboratory and role on the same assignment', () => {
-  const users = [{ id:'a', full_name:'Maria', email:'maria@example.test', role:'Operator' }, { id:'b', full_name:'John', email:'john@example.test', role:'Admin' }, { id:'c', full_name:'Ana', email:'ana@example.test', role:'Operator' }]
+  const users = [{ id:'a', full_name:'Maria', email:'maria@example.test', role:'Operator',status:'active' }, { id:'b', full_name:'John', email:'john@example.test', role:'Admin',status:'active' }, { id:'c', full_name:'Ana', email:'ana@example.test', role:'Operator',status:'active' }]
   const memberships = [{ user_id:'a', laboratory_id:'computer', role:'Laboratory Admin' }, { user_id:'a', laboratory_id:'chemistry', role:'Laboratory Operator' }]
   const filter = (search='', role='All', lab='') => filterUsers(users, memberships, search, role, lab)
   assert.deepEqual(filter('MARIA').map(row => row.id), ['a'])
@@ -35,6 +38,8 @@ test('user filters preserve all accounts and match laboratory and role on the sa
   assert.equal(filter('', 'Laboratory Admin', 'chemistry').length, 0)
   assert.deepEqual(filter('', 'Laboratory Operator', 'chemistry').map(row => row.id), ['a'])
   assert.deepEqual(filter('', 'System Admin').map(row => row.id), ['b'])
+  assert.deepEqual(filter('', 'System Admin', 'chemistry').map(row => row.id), ['b'])
+  assert.deepEqual(filter('', 'All', 'chemistry').map(row => row.id), ['a','b'])
   assert.deepEqual(filter('', 'Unassigned').map(row => row.id), ['c'])
   assert.equal(userRoleLabel(users[0], memberships, 'computer'), 'Laboratory Admin')
   assert.equal(userRoleLabel(users[0], memberships, 'chemistry'), 'Laboratory Operator')

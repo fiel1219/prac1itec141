@@ -1,4 +1,4 @@
--- Run LAST, after inventory_checks.sql. Safe to rerun. Preserves existing data.
+-- Run after inventory_checks.sql. Safe to rerun. Preserves existing data.
 begin;
 create index if not exists user_accounts_email_lookup_idx on public.user_accounts(lower(email));
 create index if not exists user_accounts_name_lookup_idx on public.user_accounts(full_name,id);
@@ -12,10 +12,11 @@ language sql stable security definer set search_path=public as $$
 $$;
 create or replace function public.inventory_can_access_laboratory(p_laboratory_id uuid) returns boolean
 language sql stable security definer set search_path=public as $$
-  select auth.uid() is not null and exists(select 1 from public.user_accounts u
-    join public.laboratory_memberships m on m.user_id=u.id
-    where lower(u.email)=lower(auth.jwt()->>'email') and u.status='active'
-      and m.laboratory_id=p_laboratory_id and m.role in ('Laboratory Admin','Laboratory Operator'))
+  select auth.uid() is not null and p_laboratory_id is not null and (
+    public.inventory_is_system_admin() or exists(select 1 from public.user_accounts u
+      join public.laboratory_memberships m on m.user_id=u.id
+      where lower(u.email)=lower(auth.jwt()->>'email') and u.status='active'
+        and m.laboratory_id=p_laboratory_id and m.role in ('Laboratory Admin','Laboratory Operator')))
 $$;
 revoke all on function public.inventory_has_active_account(),public.inventory_can_access_laboratory(uuid) from public,anon;
 grant execute on function public.inventory_has_active_account(),public.inventory_can_access_laboratory(uuid) to authenticated;
