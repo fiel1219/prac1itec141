@@ -129,6 +129,7 @@ export default function App() {
   const go = name => { if (name==='Inventory Checks' && !canInspect) return; setPage(name); setMobile(false) }
   const compactPage = ['Shelves','Returns','Transaction History','Inventory Checks','Reports'].includes(page)
   const hidePageHeader = compactPage || page === 'Items'
+  const shelvesPage = page === 'Dashboard' || page === 'Shelves'
   return <div className="app" data-theme={theme}><MainBrand theme={theme} onToggleTheme={() => setTheme(value => value === 'dark' ? 'light' : 'dark')}>
       <LaboratorySelector laboratories={availableLaboratories} selectedId={laboratoryId} loading={loading || accountLoading} onManage={isSystemAdmin ? ()=>setManagingLaboratories(true) : undefined} onSelect={selectLaboratory}/>
       {isSystemAdmin && <nav className="header-admin-nav" aria-label="Administration">{admin.map(name => <button type="button" key={name} className={page === name ? 'active' : ''} aria-current={page === name ? 'page' : undefined} onClick={() => go(name)}><span aria-hidden="true">⚙</span> {name}</button>)}</nav>}
@@ -140,7 +141,7 @@ export default function App() {
       </section>
     )}</div><nav className="sidebar-footer" aria-label="Account"><button type="button" onClick={()=>supabase?.auth.signOut()}><span aria-hidden="true">↪</span> Log out</button></nav></aside>
     {managingLaboratories && isSystemAdmin && <LaboratoryManager laboratories={laboratories} shelves={allShelves} setupRequired={laboratorySetupRequired} onClose={()=>setManagingLaboratories(false)} onChange={async preferredId=>{if(!await refreshInventory(preferredId))throw new Error('Changes were saved, but inventory could not be refreshed. Refresh the page.')}}/>}
-    <main key={laboratoryId || 'no-laboratory'} className={compactPage ? 'compact-page' : undefined}><header className={hidePageHeader ? 'inventory-page-header' : undefined}><button className="mobile" onClick={()=>setMobile(!mobile)}>☰</button>{!hidePageHeader && <div><h1>{page}</h1><p>{isSupabaseConfigured ? selectedLaboratory?.name || 'Laboratory inventory' : 'Connection setup required'}</p></div>}</header>
+    <main key={laboratoryId || 'no-laboratory'} className={[compactPage && 'compact-page', shelvesPage && 'shelves-layout'].filter(Boolean).join(' ') || undefined}><header className={hidePageHeader ? 'inventory-page-header' : undefined}><button className="mobile" onClick={()=>setMobile(!mobile)}>☰</button>{!hidePageHeader && <div><h1>{page}</h1><p>{isSupabaseConfigured ? selectedLaboratory?.name || 'Laboratory inventory' : 'Connection setup required'}</p></div>}</header>
     {assignmentError && <div role="alert" className="connection-error">Could not load account assignments: {assignmentError}</div>}
     {error && <div className="connection-error"><b>Database connection error:</b> {error}</div>}
     {accountLoading && <p role="status">Loading your laboratory assignments…</p>}
@@ -159,11 +160,12 @@ export default function App() {
     {page==='Items' && canManageInventory && !migrationRequired && <ItemManagement shelves={dbShelves} onChange={refreshInventory} onUnitQR={(shelf, unit) => setSelectedShelf({ ...shelf, qrUnit: unit })}/>}
     {page==='Reports' && canManageInventory && !loading && !error && !migrationRequired && <Reports shelves={dbShelves}/>}
     {page==='Scan QR' && canManageInventory && <InventoryScanner laboratoryId={scopedLaboratoryId} onChange={refreshInventory} migrationRequired={migrationRequired} itemNamesRequired={itemNamesRequired} itemCategoriesRequired={itemCategoriesRequired}/>}
-    {canManageInventory && (page==='Dashboard'||page==='Shelves') && <section className="card page">
+    {canManageInventory && shelvesPage && <section className="card page shelves-panel">
       <div className="cardhead"><div><h2>{page==='Dashboard'?'Shelves':page}</h2><p>{loading?'Loading shelves…':`${shelves.length} ${shelves.length === 1 ? 'shelf' : 'shelves'}`}</p></div>
         <div className="shelf-page-actions"><button type="button" className="primary shelf-add-button" disabled={loading || Boolean(error) || migrationRequired} onClick={()=>setAddingShelf(true)}>Add shelf</button>{(loading || error) && <Badge tone={error?'bad':''}>{loading?'Loading':'Error'}</Badge>}</div>
       </div>
       {page!=='Dashboard' && <div className="search">⌕ <input aria-label="Search shelves" value={query} onChange={event=>setQuery(event.target.value)} placeholder="Search shelves..."/></div>}
+      <div className="shelves-scroll" role="region" aria-label="Shelves list" tabIndex={0}>
       {!loading && !error && !shelves.length && <div className="empty shelf-empty-state">{dbShelves.length ? <><p>No shelves match your search.</p><button type="button" className="secondary" onClick={()=>setQuery('')}>Clear search</button></> : <><p>No shelves yet. Add your first shelf to start managing inventory.</p><button type="button" className="primary" disabled={migrationRequired} onClick={()=>setAddingShelf(true)}>Add your first shelf</button></>}</div>}
       <div className="shelves">{shelves.map(s=>{
         const totals = inventoryCategoryTotals(s)
@@ -171,7 +173,7 @@ export default function App() {
           <div className="shelf-category-totals"><small><b>{totals.equipment}</b> total equipment</small><small><b>{totals.consumables}</b> total consumables</small></div>
           <small className="shelf-stock-total"><b>{stockQuantity(s)}</b> total quantity <span>{activeUnits(s).filter(u=>u.status==='borrowed').length} borrowed</span></small>
         </article>
-      })}</div>
+      })}</div></div>
     </section>}
     {addingShelf && canManageInventory && <AddShelfDialog laboratoryId={scopedLaboratoryId} onClose={()=>setAddingShelf(false)} onSaved={async()=>{ setQuery(''); await refreshInventory(); setAddingShelf(false) }}/>}
     {selectedShelf && dbShelves.some(shelf=>shelf.id===selectedShelf.id) && <InventoryLabels key={selectedShelf.id + (selectedShelf.qrUnit?.id || '')} shelf={{ ...(dbShelves.find(shelf => shelf.id === selectedShelf.id) || selectedShelf), qrUnit: selectedShelf.qrUnit }} shelves={dbShelves} close={()=>setSelectedShelf(null)} onChange={refreshInventory} migrationRequired={migrationRequired} unitActionsRequired={unitActionsRequired} permanentDeleteRequired={permanentDeleteRequired} itemNamesRequired={itemNamesRequired} itemCategoriesRequired={itemCategoriesRequired} />}

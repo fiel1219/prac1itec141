@@ -26,6 +26,14 @@
 .header-admin-nav{display:flex;align-items:center;gap:8px;margin:0}
 .header-admin-nav button{width:auto;padding:10px 14px;white-space:nowrap;font-size:12px}
 .header-admin-nav button:focus-visible{outline:2px solid #6554e7;outline-offset:2px}
+.app>main.shelves-layout{height:calc(100dvh - var(--app-header-height));display:flex;flex-direction:column;overflow-y:auto}
+.shelves-layout> :not(.shelves-panel){flex-shrink:0}
+.shelves-panel{display:flex;flex-direction:column;flex:1;min-height:240px;overflow:hidden}
+.shelves-panel>.cardhead,.shelves-panel>.search{flex-shrink:0}
+.shelves-panel>.search{margin-bottom:16px;max-width:100%}
+.shelves-panel .search input{max-width:calc(100% - 24px)}
+.shelves-scroll{flex:1;min-height:0;overflow-y:auto;overscroll-behavior-y:contain;scrollbar-gutter:stable;padding:2px}
+.shelves-scroll:focus-visible{outline:2px solid var(--theme-accent, #6554e7);outline-offset:-2px;border-radius:7px}
 @media(max-width:1200px){
   .app{--app-header-height:134px}
   .main-brand-user{flex-direction:column;align-items:flex-start;justify-content:center;gap:10px;padding:12px 24px}
@@ -40,4 +48,6 @@
   .header-controls .laboratory-switcher .workspace{flex:1;width:0}
   .header-controls .manage-laboratories{margin:0;padding:5px 4px}
   .header-admin-nav{justify-content:center}
+  .app>main.shelves-layout:has(.stats){height:auto;min-height:calc(100dvh - var(--app-header-height))}
+  .shelves-layout:has(.stats)>.shelves-panel{flex:none;height:max(320px,calc(100dvh - var(--app-header-height) - 48px))}
 }
