@@ -120,8 +120,11 @@ export default function App() {
   const go = name => { if (name==='Inventory Checks' && !canInspect) return; setPage(name); setMobile(false) }
   const compactPage = ['Shelves','Returns','Transaction History','Inventory Checks','Reports'].includes(page)
   const hidePageHeader = compactPage || page === 'Items'
-  return <div className="app"><MainBrand />
-    <aside className={mobile ? 'side open' : 'side'}><div className="brand"><b>⌁</b><span><strong>VSU InventoScan</strong><small>Inventory system</small></span></div><div className="sidebar-user"><div className="user-avatar">{(currentUser?.full_name || 'U').charAt(0).toUpperCase()}</div><div><b>{currentUser?.full_name || 'Loading user...'}</b><small>{currentUser?.email || ''}</small><span>{currentUser ? userRoleLabel(currentUser,userAssignments,laboratoryId) : 'Loading role…'}{currentUser?.role !== 'Admin' && userAssignments.some(row=>row.user_id===currentUser?.id && row.laboratory_id===laboratoryId) && selectedLaboratory && ` · ${selectedLaboratory.name}`}</span></div></div><div className="sidebar-navigation"><LaboratorySelector laboratories={availableLaboratories} selectedId={laboratoryId} loading={loading || accountLoading} onManage={isSystemAdmin ? ()=>setManagingLaboratories(true) : undefined} onSelect={selectLaboratory}/>{[...navSections, ...(isSystemAdmin ? [{ title: 'Administration', items: admin.map(page => ({ page, icon: '⚙' })) }] : [])].map(section =>
+  return <div className="app"><MainBrand>
+      <LaboratorySelector laboratories={availableLaboratories} selectedId={laboratoryId} loading={loading || accountLoading} onManage={isSystemAdmin ? ()=>setManagingLaboratories(true) : undefined} onSelect={selectLaboratory}/>
+      {isSystemAdmin && <nav className="header-admin-nav" aria-label="Administration">{admin.map(name => <button type="button" key={name} className={page === name ? 'active' : ''} aria-current={page === name ? 'page' : undefined} onClick={() => go(name)}><span aria-hidden="true">⚙</span> {name}</button>)}</nav>}
+    </MainBrand>
+    <aside className={mobile ? 'side open' : 'side'}><div className="brand"><b>⌁</b><span><strong>VSU InventoScan</strong><small>Inventory system</small></span></div><div className="sidebar-user"><div className="user-avatar">{(currentUser?.full_name || 'U').charAt(0).toUpperCase()}</div><div><b>{currentUser?.full_name || 'Loading user...'}</b><small>{currentUser?.email || ''}</small><span>{currentUser ? userRoleLabel(currentUser,userAssignments,laboratoryId) : 'Loading role…'}{currentUser?.role !== 'Admin' && userAssignments.some(row=>row.user_id===currentUser?.id && row.laboratory_id===laboratoryId) && selectedLaboratory && ` · ${selectedLaboratory.name}`}</span></div></div><div className="sidebar-navigation">{navSections.map(section =>
       <section className="sidebar-section" key={section.title} aria-label={section.title}>
         <h2 className="sidebar-section-title">{section.title}</h2>
         <nav aria-label={section.title}>{section.items.filter(item=>item.page!=='Inventory Checks'||canInspect).map(item => <button type="button" className={page===item.page?'active':''} aria-current={page===item.page?'page':undefined} onClick={()=>go(item.page)} key={item.page}><span aria-hidden="true">{item.icon}</span> {item.label || item.page}</button>)}</nav>
@@ -167,8 +170,8 @@ export default function App() {
     </main></div>
 }
 
-function MainBrand() {
-  return <div className="main-brand-user"><div className="brand"><b>⌁</b><span><strong>VSU InventoScan</strong><small>Inventory system</small></span></div></div>
+function MainBrand({ children }) {
+  return <div className="main-brand-user"><div className="brand"><b>⌁</b><span><strong>VSU InventoScan</strong><small>Inventory system</small></span></div><div className="header-controls">{children}</div></div>
 }
 
 function DatabaseTable({ page, onChange, migrationRequired, shelves = [], onOpenShelf, laboratoryId }) {
