@@ -32,6 +32,14 @@ const admin = ['Users','Admin Approvals']
 const Badge = ({children,tone=''}) => <span className={'badge '+tone}>{children}</span>
 
 export default function App() {
+  const [compactNavigation, setCompactNavigation] = useState(() => window.matchMedia('(max-width: 1200px)').matches)
+  useEffect(() => {
+    const viewport = window.matchMedia('(max-width: 1200px)')
+    const update = () => setCompactNavigation(viewport.matches)
+    update()
+    viewport.addEventListener('change', update)
+    return () => viewport.removeEventListener('change', update)
+  }, [])
   const [theme, setTheme] = useState(() => {
     try { return localStorage.getItem('inventoscan.theme') === 'dark' ? 'dark' : 'light' }
     catch { return 'light' }
@@ -130,18 +138,23 @@ export default function App() {
   const compactPage = ['Shelves','Returns','Transaction History','Inventory Checks','Reports'].includes(page)
   const hidePageHeader = compactPage || page === 'Items'
   const shelvesPage = page === 'Dashboard' || page === 'Shelves'
+  const laboratoryControls = <LaboratorySelector laboratories={availableLaboratories} selectedId={laboratoryId} loading={loading || accountLoading} onManage={isSystemAdmin ? ()=>setManagingLaboratories(true) : undefined} onSelect={selectLaboratory}/>
+  const administrationLinks = isSystemAdmin && <nav className={compactNavigation ? 'sidebar-admin-nav' : 'header-admin-nav'} aria-label="Administration">{admin.map(name => <button type="button" key={name} className={page === name ? 'active' : ''} aria-current={page === name ? 'page' : undefined} onClick={() => go(name)}><span aria-hidden="true">⚙</span> {name}</button>)}</nav>
   return <div className="app" data-theme={theme}><MainBrand theme={theme} onToggleTheme={() => setTheme(value => value === 'dark' ? 'light' : 'dark')}>
-      <LaboratorySelector laboratories={availableLaboratories} selectedId={laboratoryId} loading={loading || accountLoading} onManage={isSystemAdmin ? ()=>setManagingLaboratories(true) : undefined} onSelect={selectLaboratory}/>
-      {isSystemAdmin && <nav className="header-admin-nav" aria-label="Administration">{admin.map(name => <button type="button" key={name} className={page === name ? 'active' : ''} aria-current={page === name ? 'page' : undefined} onClick={() => go(name)}><span aria-hidden="true">⚙</span> {name}</button>)}</nav>}
+      {!compactNavigation && <>{laboratoryControls}{administrationLinks}</>}
     </MainBrand>
-    <aside className={mobile ? 'side open' : 'side'}><div className="brand"><b>⌁</b><span><strong>VSU InventoScan</strong><small>Inventory system</small></span></div><div className="sidebar-user"><div className="user-avatar">{(currentUser?.full_name || 'U').charAt(0).toUpperCase()}</div><div><b>{currentUser?.full_name || 'Loading user...'}</b><small>{currentUser?.email || ''}</small><span>{currentUser ? userRoleLabel(currentUser,userAssignments,laboratoryId) : 'Loading role…'}{currentUser?.role !== 'Admin' && userAssignments.some(row=>row.user_id===currentUser?.id && row.laboratory_id===laboratoryId) && selectedLaboratory && ` · ${selectedLaboratory.name}`}</span></div></div><div className="sidebar-navigation">{navSections.map(section =>
+    <aside id="app-sidebar" className={mobile ? 'side open' : 'side'}><div className="brand"><b>⌁</b><span><strong>VSU InventoScan</strong><small>Inventory system</small></span></div><div className="sidebar-user"><div className="user-avatar">{(currentUser?.full_name || 'U').charAt(0).toUpperCase()}</div><div><b>{currentUser?.full_name || 'Loading user...'}</b><small>{currentUser?.email || ''}</small><span>{currentUser ? userRoleLabel(currentUser,userAssignments,laboratoryId) : 'Loading role…'}{currentUser?.role !== 'Admin' && userAssignments.some(row=>row.user_id===currentUser?.id && row.laboratory_id===laboratoryId) && selectedLaboratory && ` · ${selectedLaboratory.name}`}</span></div></div><div className="sidebar-navigation">
+      {compactNavigation && <div className="sidebar-laboratories">{laboratoryControls}</div>}
+      {navSections.map(section =>
       <section className="sidebar-section" key={section.title} aria-label={section.title}>
         <h2 className="sidebar-section-title">{section.title}</h2>
         <nav aria-label={section.title}>{section.items.filter(item=>item.page!=='Inventory Checks'||canInspect).map(item => <button type="button" className={page===item.page?'active':''} aria-current={page===item.page?'page':undefined} onClick={()=>go(item.page)} key={item.page}><span aria-hidden="true">{item.icon}</span> {item.label || item.page}</button>)}</nav>
       </section>
-    )}</div><nav className="sidebar-footer" aria-label="Account"><button type="button" onClick={()=>supabase?.auth.signOut()}><span aria-hidden="true">↪</span> Log out</button></nav></aside>
+    )}
+      {compactNavigation && isSystemAdmin && <section className="sidebar-section" aria-label="Administration links"><h2 className="sidebar-section-title">Administration</h2>{administrationLinks}</section>}
+    </div><nav className="sidebar-footer" aria-label="Account"><button type="button" onClick={()=>supabase?.auth.signOut()}><span aria-hidden="true">↪</span> Log out</button></nav></aside>
     {managingLaboratories && isSystemAdmin && <LaboratoryManager laboratories={laboratories} shelves={allShelves} setupRequired={laboratorySetupRequired} onClose={()=>setManagingLaboratories(false)} onChange={async preferredId=>{if(!await refreshInventory(preferredId))throw new Error('Changes were saved, but inventory could not be refreshed. Refresh the page.')}}/>}
-    <main key={laboratoryId || 'no-laboratory'} className={[compactPage && 'compact-page', shelvesPage && 'shelves-layout'].filter(Boolean).join(' ') || undefined}><header className={hidePageHeader ? 'inventory-page-header' : undefined}><button className="mobile" onClick={()=>setMobile(!mobile)}>☰</button>{!hidePageHeader && <div><h1>{page}</h1><p>{isSupabaseConfigured ? selectedLaboratory?.name || 'Laboratory inventory' : 'Connection setup required'}</p></div>}</header>
+    <main key={laboratoryId || 'no-laboratory'} className={[compactPage && 'compact-page', shelvesPage && 'shelves-layout'].filter(Boolean).join(' ') || undefined}><header className={hidePageHeader ? 'inventory-page-header' : undefined}><button className="mobile" aria-label={mobile ? 'Close navigation' : 'Open navigation'} aria-expanded={mobile} aria-controls="app-sidebar" onClick={()=>setMobile(!mobile)}>☰</button>{!hidePageHeader && <div><h1>{page}</h1><p>{isSupabaseConfigured ? selectedLaboratory?.name || 'Laboratory inventory' : 'Connection setup required'}</p></div>}</header>
     {assignmentError && <div role="alert" className="connection-error">Could not load account assignments: {assignmentError}</div>}
     {error && <div className="connection-error"><b>Database connection error:</b> {error}</div>}
     {accountLoading && <p role="status">Loading your laboratory assignments…</p>}
