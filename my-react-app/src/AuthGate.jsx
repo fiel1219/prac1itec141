@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import App from './App'
 import { supabase } from './lib/supabase'
+import { registerAccount } from './lib/registration'
 import './DemoLogin.css'
 import BrandLogo from './BrandLogo'
 
@@ -18,6 +19,7 @@ export default function AuthGate() {
   const [showPassword, setShowPassword] = useState(false)
   const [email, setEmail] = useState(''), [password, setPassword] = useState(''), [fullName, setFullName] = useState('')
   const authVersion = useRef(0)
+  const registrationInProgress = useRef(false)
 
   useEffect(() => {
     if (!supabase) return
@@ -31,6 +33,7 @@ export default function AuthGate() {
     }).catch(failure => { if (initialVersion === authVersion.current) { setError(failure.message); setLoading(false) } })
     const { data: listener } = supabase.auth.onAuthStateChange((_event, current) => {
       const version = ++authVersion.current
+      if (registrationInProgress.current) { setSession(null); setLoading(false); return }
       // Query account permissions after the auth callback releases its lock.
       if (current) setTimeout(() => { if (version === authVersion.current) check(current, version) }, 0)
       else { setSession(null); setLoading(false) }
@@ -68,17 +71,16 @@ export default function AuthGate() {
 
   async function register(event) {
     event.preventDefault(); setError('')
+    if (signingIn) return
     if (!supabase) { setError('Connection setup required. Please contact an administrator.'); return }
     if (!fullName.trim()) { setError('Enter your full name.'); return }
     setSigningIn(true)
+    registrationInProgress.current = true
+    authVersion.current++
     try {
-      const { data, error: signupError } = await supabase.auth.signUp({ email, password })
-      if (signupError) throw signupError
-      const { error: approvalError } = await supabase.from('account_approvals').insert({ full_name: fullName.trim(), email: email.trim().toLowerCase(), status: 'pending' })
-      if (data.session) await supabase.auth.signOut()
-      if (approvalError) throw approvalError
-      setRegistering(false); setPassword(''); setShowPassword(false); setError('Account created. An administrator must approve it before you can sign in.')
-    } catch (failure) { setError(failure.message) } finally { setSigningIn(false) }
+      await registerAccount(supabase, { fullName, email, password })
+      setRegistering(false); setPassword(''); setShowPassword(false); setError('Registration submitted. Check your email if confirmation is required. An administrator must approve your account before you can sign in.')
+    } catch (failure) { setError(failure.message) } finally { registrationInProgress.current = false; setSigningIn(false) }
   }
 
   if (loading) return <div className="login-screen"><div className="login-card">Connecting securely…</div></div>

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useLayoutEffect, useState } from 'react'
 import { supabase } from './lib/supabase'
 import { itemLabel, itemName } from './lib/inventory'
 import { checkSubmission, countedQuantity, inspectionItems, inspectionResultText, isInspectionReviewed, loadInventoryChecks, quantityDifferenceLabel } from './lib/inventoryChecks'
@@ -23,7 +23,7 @@ function InspectionItem({ item, shelf, finding = {}, disabled, update }) {
   </article>
 }
 
-export default function InventoryChecks({ laboratoryId, shelves, onChange, inventoryLoading, inventoryError, setupRequired }) {
+export default function InventoryChecks({ laboratoryId, shelves, onChange, registerNavigationGuard, inventoryLoading, inventoryError, setupRequired }) {
   const [shelfId, setShelfId] = useState(''), [snapshot, setSnapshot] = useState(null)
   const [findings, setFindings] = useState({}), [comments, setComments] = useState('')
   const [busy, setBusy] = useState(false), [error, setError] = useState(''), [success, setSuccess] = useState('')
@@ -42,7 +42,20 @@ export default function InventoryChecks({ laboratoryId, shelves, onChange, inven
   const items = snapshot ? inspectionItems(snapshot) : []
   const inspectable = items.filter(item => !item.skip_reason)
   const reviewed = inspectable.filter(item => isInspectionReviewed(item, findings[item.id])).length
-  const dirty = Object.keys(findings).length > 0 || Boolean(comments.trim())
+  const dirty = Object.keys(findings).length > 0 || comments.length > 0
+  useLayoutEffect(() => {
+    const guard = () => {
+      if (busy) { window.alert('Please wait until the inventory check finishes saving.'); return false }
+      return !dirty || window.confirm('Discard this unfinished inventory check?')
+    }
+    return registerNavigationGuard?.(guard)
+  }, [busy, dirty, registerNavigationGuard])
+  useEffect(() => {
+    if (!dirty && !busy) return
+    const warn = event => { event.preventDefault(); event.returnValue = '' }
+    window.addEventListener('beforeunload', warn)
+    return () => window.removeEventListener('beforeunload', warn)
+  }, [busy, dirty])
   const shelfExists = shelves.some(shelf => shelf.id === shelfId)
   function selectShelf(id) {
     if (busy || (dirty && !window.confirm('Discard this unfinished inventory check?'))) return
@@ -75,7 +88,7 @@ export default function InventoryChecks({ laboratoryId, shelves, onChange, inven
     } finally { setBusy(false) }
   }
   return <section className="card page inventory-checks-page">
-    <div className="cardhead"><div><h2>Inventory Checks</h2><p>Choose a shelf to check equipment conditions and consumable quantities.</p></div></div>
+    <div className="cardhead"><div><h2>Inventory Checks</h2></div></div>
     {(setupRequired || checkSetupRequired) && <p className="connection-error" role="status">Inventory checks need a system update. Ask your System Admin to complete setup before saving checks.</p>}
     {error && <p role="alert" className="connection-error">{error}</p>}
     {success && <p role="status" className="success-message">{success}</p>}
@@ -84,7 +97,6 @@ export default function InventoryChecks({ laboratoryId, shelves, onChange, inven
       {shelves.map(shelf => <option key={shelf.id} value={shelf.id}>{shelf.code} · {shelf.name}</option>)}
     </select></label>{shelfId && <button type="button" className="secondary" disabled={busy || inventoryLoading || Boolean(inventoryError) || !shelfExists} onClick={() => selectShelf(shelfId)}>{snapshot ? 'Reload shelf items' : 'Start another check'}</button>}</div>
     {!shelves.length && !inventoryLoading && !inventoryError && <p className="empty">No shelves in this laboratory yet.</p>}
-    {!shelfId && shelves.length > 0 && <p className="empty">Select a shelf to see its equipment and consumables.</p>}
     {snapshot && <form aria-label="Shelf inventory check" onSubmit={save}>
       <div className="check-progress"><h3>{snapshot.code} · {snapshot.name}</h3><span>{reviewed} of {inspectable.length} records reviewed</span></div>
       {!shelfExists && <p role="alert" className="connection-error">This shelf is no longer available. Select another shelf.</p>}

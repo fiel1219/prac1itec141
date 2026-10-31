@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import './App.css'
 import './Theme.css'
 import BrandLogo from './BrandLogo'
+import TableScroll from './TableScroll'
 import { fetchShelves, fetchLaboratories, fetchTransactions, fetchApprovals, isSupabaseConfigured, supabase } from './lib/supabase'
 import { InventoryLabels, InventoryScanner } from './InventoryQR'
 import { AddShelfDialog, ItemManagement, Reports } from './InventoryFeatures'
@@ -52,6 +53,12 @@ export default function App() {
   const [page,setPage] = useState('Dashboard')
   const [mobile,setMobile] = useState(false)
   const navigationToggle = useRef(null)
+  const inventoryCheckGuard = useRef(null)
+  const registerInventoryCheckGuard = useCallback(guard => {
+    inventoryCheckGuard.current = guard
+    return () => { if (inventoryCheckGuard.current === guard) inventoryCheckGuard.current = null }
+  }, [])
+  const canLeaveInventoryCheck = () => !inventoryCheckGuard.current || inventoryCheckGuard.current()
   const [query,setQuery] = useState('')
   const [allShelves,setAllShelves] = useState([])
   const [laboratories,setLaboratories] = useState([]), [preferredLaboratoryId,setPreferredLaboratoryId] = useState(storedLaboratory)
@@ -88,6 +95,7 @@ export default function App() {
   }
   function selectLaboratory(id) {
     if (!availableLaboratories.some(laboratory=>laboratory.id===id)) return
+    if (id === laboratoryId || !canLeaveInventoryCheck()) return
     setPreferredLaboratoryId(id);setQuery('');setSelectedShelf(null);setAddingShelf(false);setMobile(false)
   }
   useEffect(() => {
@@ -136,18 +144,23 @@ export default function App() {
     totals.consumables += shelfTotals.consumables
     return totals
   }, { equipment:0, consumables:0 })
-  const go = name => { if (name==='Inventory Checks' && !canInspect) return; setPage(name); setMobile(false) }
-  const compactPage = ['Shelves','Returns','Transaction History','Inventory Checks','Reports'].includes(page)
+  const go = name => { if (name==='Inventory Checks' && !canInspect) return; if (name !== page && !canLeaveInventoryCheck()) return; setPage(name); setMobile(false) }
+  const compactPage = ['Shelves','Returns','Transaction History','Inventory Checks','Reports','Users','Admin Approvals'].includes(page)
+  const tablePage = ['Returns','Transaction History','Reports','Users','Admin Approvals'].includes(page)
   const hidePageHeader = compactPage || page === 'Items'
   const shelvesPage = page === 'Dashboard' || page === 'Shelves'
   const laboratoryControls = <LaboratorySelector laboratories={availableLaboratories} selectedId={laboratoryId} loading={loading || accountLoading} onManage={isSystemAdmin ? ()=>setManagingLaboratories(true) : undefined} onSelect={selectLaboratory}/>
   const administrationLinks = isSystemAdmin && <nav className={compactNavigation ? 'sidebar-admin-nav' : 'header-admin-nav'} aria-label="Administration">{admin.map(name => <button type="button" key={name} className={page === name ? 'active' : ''} aria-current={page === name ? 'page' : undefined} onClick={() => go(name)}><span aria-hidden="true">⚙</span> {name}</button>)}</nav>
-  return <div className={page === 'Transaction History' ? 'app history-view' : 'app'} data-theme={theme}><MainBrand theme={theme} onToggleTheme={() => setTheme(value => value === 'dark' ? 'light' : 'dark')}>
+  return <div className={tablePage ? 'app table-view' : 'app'} data-theme={theme}><MainBrand theme={theme} onToggleTheme={() => setTheme(value => value === 'dark' ? 'light' : 'dark')}>
       {!compactNavigation && <>{laboratoryControls}{administrationLinks}</>}
     </MainBrand>
     <aside id="app-sidebar" className={mobile ? 'side open' : 'side'}>
-      {mobile && <button type="button" className="sidebar-close" aria-label="Close sidebar" title="Close sidebar" onClick={() => { setMobile(false); navigationToggle.current?.focus() }}><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>}
-      <div className="brand"><BrandLogo/><span><strong>VSU InventoScan</strong><small>Inventory system</small></span></div><div className="sidebar-user"><div className="user-avatar">{(currentUser?.full_name || 'U').charAt(0).toUpperCase()}</div><div><b>{currentUser?.full_name || 'Loading user...'}</b><small>{currentUser?.email || ''}</small><span>{currentUser ? userRoleLabel(currentUser,userAssignments,laboratoryId) : 'Loading role…'}{currentUser?.role !== 'Admin' && userAssignments.some(row=>row.user_id===currentUser?.id && row.laboratory_id===laboratoryId) && selectedLaboratory && ` · ${selectedLaboratory.name}`}</span></div></div><div className="sidebar-navigation">
+      <div className="brand"><BrandLogo/><span><strong>VSU InventoScan</strong><small>Inventory system</small></span></div>
+      <div className="sidebar-user">
+        <div className="user-avatar">{(currentUser?.full_name || 'U').charAt(0).toUpperCase()}</div>
+        <div><b>{currentUser?.full_name || 'Loading user...'}</b><small>{currentUser?.email || ''}</small><span>{currentUser ? userRoleLabel(currentUser,userAssignments,laboratoryId) : 'Loading role…'}{currentUser?.role !== 'Admin' && userAssignments.some(row=>row.user_id===currentUser?.id && row.laboratory_id===laboratoryId) && selectedLaboratory && ` · ${selectedLaboratory.name}`}</span></div>
+        {mobile && <button type="button" className="sidebar-close" aria-label="Close sidebar" title="Close sidebar" onClick={() => { setMobile(false); navigationToggle.current?.focus() }}><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>}
+      </div><div className="sidebar-navigation">
       {compactNavigation && <div className="sidebar-laboratories">{laboratoryControls}</div>}
       {navSections.map(section =>
       <section className="sidebar-section" key={section.title} aria-label={section.title}>
@@ -156,9 +169,12 @@ export default function App() {
       </section>
     )}
       {compactNavigation && isSystemAdmin && <section className="sidebar-section" aria-label="Administration links"><h2 className="sidebar-section-title">Administration</h2>{administrationLinks}</section>}
-    </div><nav className="sidebar-footer" aria-label="Account"><button type="button" onClick={()=>supabase?.auth.signOut()}><span aria-hidden="true">↪</span> Log out</button></nav></aside>
-    {managingLaboratories && isSystemAdmin && <LaboratoryManager laboratories={laboratories} shelves={allShelves} setupRequired={laboratorySetupRequired} onClose={()=>setManagingLaboratories(false)} onChange={async preferredId=>{if(!await refreshInventory(preferredId))throw new Error('Changes were saved, but inventory could not be refreshed. Refresh the page.')}}/>}
-    <main key={laboratoryId || 'no-laboratory'} className={[compactPage && 'compact-page', shelvesPage && 'shelves-layout', page === 'Transaction History' && 'history-layout'].filter(Boolean).join(' ') || undefined}><header className={hidePageHeader ? 'inventory-page-header' : undefined}><button ref={navigationToggle} className="mobile" aria-label={mobile ? 'Close navigation' : 'Open navigation'} aria-expanded={mobile} aria-controls="app-sidebar" onClick={()=>setMobile(!mobile)}>☰</button>{!hidePageHeader && <div><h1>{page}</h1><p>{isSupabaseConfigured ? selectedLaboratory?.name || 'Laboratory inventory' : 'Connection setup required'}</p></div>}</header>
+    </div><nav className="sidebar-footer" aria-label="Account"><button type="button" onClick={()=>{if(canLeaveInventoryCheck())supabase?.auth.signOut()}}><span aria-hidden="true">↪</span> Log out</button></nav></aside>
+    {managingLaboratories && isSystemAdmin && <LaboratoryManager laboratories={laboratories} shelves={allShelves} setupRequired={laboratorySetupRequired} onClose={()=>setManagingLaboratories(false)} onChange={async preferredId=>{
+      const nextId = typeof preferredId === 'string' && preferredId !== laboratoryId && !canLeaveInventoryCheck() ? undefined : preferredId
+      if(!await refreshInventory(nextId))throw new Error('Changes were saved, but inventory could not be refreshed. Refresh the page.')
+    }}/>}
+    <main key={laboratoryId || 'no-laboratory'} className={[compactPage && 'compact-page', shelvesPage && 'shelves-layout', tablePage && 'table-layout'].filter(Boolean).join(' ') || undefined}><header className={hidePageHeader ? 'inventory-page-header' : undefined}><button ref={navigationToggle} className="mobile" aria-label={mobile ? 'Close navigation' : 'Open navigation'} aria-expanded={mobile} aria-controls="app-sidebar" onClick={()=>setMobile(!mobile)}>☰</button>{!hidePageHeader && <div><h1>{page}</h1><p>{isSupabaseConfigured ? selectedLaboratory?.name || 'Laboratory inventory' : 'Connection setup required'}</p></div>}</header>
     {assignmentError && <div role="alert" className="connection-error">Could not load account assignments: {assignmentError}</div>}
     {error && <div className="connection-error"><b>Database connection error:</b> {error}</div>}
     {accountLoading && <p role="status">Loading your laboratory assignments…</p>}
@@ -169,10 +185,10 @@ export default function App() {
     {!migrationRequired && permanentDeleteRequired && !loading && <section className="card inventory-alerts" role="status"><h2>Deletion update required</h2><p>Ask an administrator to enable permanent deletion for shelves and items.</p></section>}
     {!migrationRequired && itemNamesRequired && !loading && <section className="card inventory-alerts" role="status"><h2>Item management update required</h2><p>Ask an administrator to update item management before adding named items or issuing stock by item.</p></section>}
     {!migrationRequired && !itemNamesRequired && itemCategoriesRequired && !loading && <section className="card inventory-alerts" role="status"><h2>Consumable stock update required</h2><p>Ask an administrator to update consumable stock tracking before adding or issuing quantities.</p></section>}
-    {page==='Dashboard' && canManageInventory && <section className="stats">{[['Shelves',dbShelves.length,'Total shelves','▥'],['Equipments',inventoryTotals.equipment,'Total equipment','▤'],['Consumables',inventoryTotals.consumables,'Total quantity','▦']].map((x,i)=><div className="stat" key={x[0]}><i className={'c'+i}>{x[3]}</i><small>{x[0]}</small><strong>{loading?'…':x[1]}</strong><em>{x[2]}</em></div>)}</section>}
+    {page==='Dashboard' && canManageInventory && <section className="stats">{[['Shelves',dbShelves.length,'Total shelves','▥'],['Equipments',inventoryTotals.equipment,'Total equipment','▤'],['Consumables',inventoryTotals.consumables,'Total quantity','▦']].map((x,i)=><div className="stat" key={x[0]}><div className="stat-heading"><i className={'c'+i} aria-hidden="true">{x[3]}</i><small>{x[0]}</small></div><strong>{loading?'…':x[1]}</strong><em>{x[2]}</em></div>)}</section>}
     {page==='Users' && isSystemAdmin && <Users currentUser={currentUser} laboratories={laboratories} laboratorySetupRequired={laboratorySetupRequired} onAccountChange={()=>setAccountVersion(value=>value+1)}/>}
     {page==='Inventory Checks' && canManageInventory && (canInspect
-      ? <InventoryChecks laboratoryId={scopedLaboratoryId} shelves={dbShelves} onChange={refreshInventory} inventoryLoading={loading} inventoryError={error} setupRequired={migrationRequired || itemNamesRequired || itemCategoriesRequired}/>
+      ? <InventoryChecks laboratoryId={scopedLaboratoryId} shelves={dbShelves} onChange={refreshInventory} registerNavigationGuard={registerInventoryCheckGuard} inventoryLoading={loading} inventoryError={error} setupRequired={migrationRequired || itemNamesRequired || itemCategoriesRequired}/>
       : <section className="card page"><h2>Inventory Checks</h2><p>System Admins and assigned laboratory staff can check inventory in this laboratory.</p></section>)}
     {page==='Items' && canManageInventory && !migrationRequired && <ItemManagement shelves={dbShelves} onChange={refreshInventory} onUnitQR={(shelf, unit) => setSelectedShelf({ ...shelf, qrUnit: unit })}/>}
     {page==='Reports' && canManageInventory && !loading && !error && !migrationRequired && <Reports shelves={dbShelves}/>}
@@ -252,14 +268,14 @@ function DatabaseTable({ page, onChange, migrationRequired, shelves = [], onOpen
   }
   if (isHistory) {
     const filteredTransactions = rows.filter(r => transactionFilter === 'all' || (transactionFilter === 'returned' ? Boolean(r.returned_at) : !r.returned_at))
-    return <section className="card page transaction-history">
+    return <section className="card page transaction-history table-page">
       <div className="cardhead"><div><h2>Transaction History</h2><p>All checkout and return records.</p></div><div className="history-controls">
         <div className="history-filter-buttons" role="group" aria-label="Filter transaction history">{[['all','All'],['borrowed','Borrow'],['returned','Return']].map(([value,label]) => <button key={value} type="button" aria-pressed={transactionFilter === value} onClick={() => setTransactionFilter(value)}>{label}</button>)}</div>
         <Badge>{filteredTransactions.length} {filteredTransactions.length === 1 ? 'record' : 'records'}</Badge>
       </div></div>
       {error && <div className="connection-error">{error}</div>}
       {!loading && !error && !filteredTransactions.length && <div className="empty">No transactions match this filter.</div>}
-      {filteredTransactions.length > 0 && <div className="history-table-scroll" role="region" aria-label="Transaction records" tabIndex={0}>
+      {filteredTransactions.length > 0 && <TableScroll className="history-table-scroll" label="Transaction records">
         <table><thead><tr><th>REFERENCE</th><th>BORROWER</th><th>ITEM</th><th>BORROWED</th><th>EXPECTED RETURN</th><th>BORROWED BY</th><th>RETURNED BY</th><th>STATUS</th></tr></thead>
           <tbody>{filteredTransactions.map(r => <tr key={r.id}>
             <td><b>{r.reference}</b></td><td>{r.borrowers?.name || '—'}</td>
@@ -268,10 +284,30 @@ function DatabaseTable({ page, onChange, migrationRequired, shelves = [], onOpen
             <td><Badge tone={r.returned_at ? 'neutral' : ''}>{r.returned_at ? 'Returned' : 'Borrowed'}</Badge></td>
           </tr>)}</tbody>
         </table>
-      </div>}
+      </TableScroll>}
     </section>
   }
-  if (isReturns) return <section className="card page"><div className="cardhead"><div><h2>Returns</h2><p>Process borrowed items returned to the laboratory.</p></div><Badge>{activeReturns.length} active</Badge></div>{error && <div className="connection-error">{error}</div>}{returnStatusWarning}{!loading && !error && !activeReturns.length && <div className="empty">No active loan records are waiting for return.</div>}{activeReturns.length > 0 && <table><thead><tr><th>REFERENCE</th><th>BORROWER</th><th>ITEM</th><th>BORROWED</th><th>EXPECTED RETURN</th><th>ACTION</th></tr></thead><tbody>{activeReturns.map(r => <tr key={r.id}><td><b>{r.reference}</b></td><td>{r.borrowers?.name || '—'}</td><td>{r.checkout_shelf_code || r.inventory_units?.shelves?.code || '—'} #{String(r.checkout_unit_number ?? r.inventory_units?.unit_number ?? '').padStart(3,'0')}</td><td>{new Date(r.borrowed_at).toLocaleDateString()}</td><td>{r.expected_return_at}</td><td><button className="primary" onClick={() => returnItem(r)}>Mark returned</button></td></tr>)}</tbody></table>}{returnModal}</section>
-  if (isApprovals) return <section className="card page"><div className="cardhead"><div><h2>Admin Approvals</h2><p>Choose a system role before approving each account</p></div><Badge>{rows.length} requests</Badge></div>{loading && <p role="status">Loading requests…</p>}{!loading && !error && !rows.length && <p className="empty">No pending account requests.</p>}{error&&<div className="connection-error">{error}</div>}<table><thead><tr><th>NAME</th><th>EMAIL</th><th>ASSIGN ROLE</th><th>STATUS</th><th>ACTION</th></tr></thead><tbody>{rows.map(r=><tr key={r.id}><td><b>{r.full_name}</b></td><td>{r.email}</td><td>{r.status==='pending'?<select aria-label={`Role for ${r.full_name}`} disabled={Boolean(approvingId)} value={r.requested_role || 'Operator'} onChange={e=>setRows(rows.map(x=>x.id===r.id?{...x,requested_role:e.target.value}:x))}><option value="Admin">System Admin</option><option value="Operator">Laboratory member</option></select>:r.requested_role}</td><td><Badge tone={r.status==='pending'?'':'neutral'}>{r.status}</Badge></td><td>{r.status==='pending'&&<button className="primary" disabled={Boolean(approvingId)} onClick={()=>approve(r,r.requested_role || 'Operator')}>{approvingId===r.id?'Approving…':'Approve'}</button>}</td></tr>)}</tbody></table></section>
+  if (isReturns) return <section className="card page table-page"><div className="cardhead"><div><h2>Returns</h2><p>Process borrowed items returned to the laboratory.</p></div><Badge>{activeReturns.length} active</Badge></div>{error && <div className="connection-error">{error}</div>}{returnStatusWarning}{!loading && !error && !activeReturns.length && <div className="empty">No active loan records are waiting for return.</div>}{activeReturns.length > 0 && <TableScroll label="Borrowed equipment"><table><thead><tr><th>REFERENCE</th><th>BORROWER</th><th>ITEM</th><th>BORROWED</th><th>EXPECTED RETURN</th><th>ACTION</th></tr></thead><tbody>{activeReturns.map(r => <tr key={r.id}><td><b>{r.reference}</b></td><td>{r.borrowers?.name || '—'}</td><td>{r.checkout_shelf_code || r.inventory_units?.shelves?.code || '—'} #{String(r.checkout_unit_number ?? r.inventory_units?.unit_number ?? '').padStart(3,'0')}</td><td>{new Date(r.borrowed_at).toLocaleDateString()}</td><td>{r.expected_return_at}</td><td><button className="primary" onClick={() => returnItem(r)}>Mark returned</button></td></tr>)}</tbody></table></TableScroll>}{returnModal}</section>
+  if (isApprovals) return <section className="card page table-page admin-approvals">
+    <div className="cardhead">
+      <div><h2>Admin Approvals</h2><p>Choose a system role before approving each account</p></div>
+      <Badge>{rows.length} {rows.length === 1 ? 'request' : 'requests'}</Badge>
+    </div>
+    {loading && <p role="status">Loading requests…</p>}
+    {error && <div className="connection-error">{error}</div>}
+    <TableScroll label="Account approval requests">
+      <table><thead><tr><th>NAME</th><th>EMAIL</th><th>ASSIGN ROLE</th><th>STATUS</th><th>ACTION</th></tr></thead>
+        <tbody>
+          {!loading && !error && !rows.length && <tr><td colSpan={5} className="table-empty">No pending account requests.</td></tr>}
+          {rows.map(r => <tr key={r.id}>
+            <td><b>{r.full_name}</b></td><td>{r.email}</td>
+            <td>{r.status === 'pending' ? <select aria-label={`Role for ${r.full_name}`} disabled={Boolean(approvingId)} value={r.requested_role || 'Operator'} onChange={event => setRows(rows.map(row => row.id === r.id ? { ...row, requested_role: event.target.value } : row))}><option value="Admin">System Admin</option><option value="Operator">Laboratory member</option></select> : r.requested_role}</td>
+            <td><Badge tone={r.status === 'pending' ? '' : 'neutral'}>{r.status}</Badge></td>
+            <td>{r.status === 'pending' && <button className="primary" disabled={Boolean(approvingId)} onClick={() => approve(r, r.requested_role || 'Operator')}>{approvingId === r.id ? 'Approving…' : 'Approve'}</button>}</td>
+          </tr>)}
+        </tbody>
+      </table>
+    </TableScroll>
+  </section>
   return null
 }

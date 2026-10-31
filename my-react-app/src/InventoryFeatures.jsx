@@ -3,6 +3,7 @@ import { supabase } from './lib/supabase'
 import { activeUnits, recordQuantity, itemLabel, itemName, shelfItems, inventorySummary, downloadCsv } from './lib/inventory'
 import { isConsumableUnit } from './lib/inventoryQR'
 import './InventoryFeatures.css'
+import TableScroll from './TableScroll'
 
 function Message({ error, success }) {
   return <>{error && <div role="alert" className="connection-error">{error}</div>}{success && <div role="status" className="success-message">{success}</div>}</>
@@ -102,17 +103,17 @@ export function ItemManagement({ shelves, onChange, onUnitQR }) {
       <div className="inventory-buttons"><button className="primary" disabled={busy}>{busy ? 'Saving…' : 'Save item'}</button><button type="button" className="secondary" disabled={busy} onClick={() => { setUnit(null);setEditing(null);setError('') }}>Cancel</button></div>
     </form>}
     <section className="item-list-section" aria-label="Equipment"><h3>Equipment <span>{equipment.length}</span></h3>
-      {!!equipment.length && <div className="inventory-table"><table><thead><tr><th>Reference</th><th>Item name</th><th>Description</th><th>Status</th><th>Condition</th><th>Actions</th></tr></thead><tbody>{equipment.map(({shelf,item}) => <tr key={item.id}>
+      {!!equipment.length && <TableScroll className="inventory-table" label="Equipment inventory"><table><thead><tr><th>Reference</th><th>Item name</th><th>Description</th><th>Status</th><th>Condition</th><th>Actions</th></tr></thead><tbody>{equipment.map(({shelf,item}) => <tr key={item.id}>
         <td>{itemLabel(item,shelf)}</td><td><b>{itemName(item,shelf)}</b></td><td className="item-description">{item.description || '—'}</td><td>{item.status.replaceAll('_',' ')}</td><td>{item.condition}</td>
         <td><div className="inventory-buttons"><button type="button" className="secondary" disabled={busy || item.status === 'borrowed'} title={item.status === 'borrowed' ? 'Return this equipment before editing it' : undefined} onClick={() => edit(shelf,item)}>Edit item</button><button type="button" className="secondary" disabled={busy} onClick={() => onUnitQR(shelf,item)}>View QR</button></div></td>
-      </tr>)}</tbody></table></div>}
+      </tr>)}</tbody></table></TableScroll>}
       {!equipment.length && <p className="item-list-empty">{search ? 'No equipment matches your search.' : 'No equipment yet.'}</p>}
     </section>
     <section className="item-list-section" aria-label="Consumables"><h3>Consumables <span>{consumables.length}</span></h3>
-      {!!consumables.length && <div className="inventory-table"><table><thead><tr><th>Reference</th><th>Item name</th><th>Description</th><th>Quantity</th><th>Available</th><th>Actions</th></tr></thead><tbody>{consumables.map(({shelf,item}) => <tr key={shelf.id+':'+item.key}>
+      {!!consumables.length && <TableScroll className="inventory-table" label="Consumable inventory"><table><thead><tr><th>Reference</th><th>Item name</th><th>Description</th><th>Quantity</th><th>Available</th><th>Actions</th></tr></thead><tbody>{consumables.map(({shelf,item}) => <tr key={shelf.id+':'+item.key}>
         <td>{itemLabel(item.units[0],shelf)}</td><td><b>{item.name}</b></td><td className="item-description">{[...new Set(item.units.map(stock => stock.description).filter(Boolean))].join('\n') || '—'}</td><td>{item.quantity}</td><td>{item.available}</td>
         <td><div className="inventory-buttons"><button type="button" className="secondary" disabled={busy || item.units.every(stock => stock.status === 'borrowed')} onClick={() => edit(shelf,item.units.find(stock => stock.status !== 'borrowed'),item.key)}>Edit item</button><button type="button" className="secondary" disabled={busy} onClick={() => onUnitQR(shelf,item.units[0])}>View QR</button></div></td>
-      </tr>)}</tbody></table></div>}
+      </tr>)}</tbody></table></TableScroll>}
       {!consumables.length && <p className="item-list-empty">{search ? 'No consumables match your search.' : 'No consumables yet.'}</p>}
     </section>
   </section>
@@ -123,5 +124,5 @@ export function Reports({ shelves }) {
   const summary = inventorySummary(shelves).filter(row => `${row.code} ${row.name} ${row.item_type}`.toLowerCase().includes(query.toLowerCase()) && (!onlyLow || row.low_stock === 'Yes'))
   const fields = ['code','name','item_type','category','total','available','borrowed','damaged','maintenance','missing','threshold','low_stock']
   const headers = ['Code','Name','Item type','Category','Total','Available','Borrowed','Damaged','Maintenance','Missing / not found','Threshold','Low stock']
-  return <section className="card inventory-feature"><div className="cardhead"><div><h2>Inventory summary</h2><p>Current active inventory. Damaged and maintenance counts may overlap.</p></div><button className="primary" onClick={() => downloadCsv('inventoscan-inventory.csv',headers,summary.map(row => fields.map(field => row[field])))}>Export summary CSV</button></div><div className="inventory-filters"><label>Search<input value={query} onChange={event => setQuery(event.target.value)} placeholder="Shelf or item type"/></label><label className="inventory-checkbox"><input type="checkbox" checked={onlyLow} onChange={event => setOnlyLow(event.target.checked)}/>Low stock only</label></div><div className="inventory-table"><table><thead><tr>{headers.map(header => <th key={header}>{header}</th>)}</tr></thead><tbody>{summary.map(row => <tr key={`${row.code}:${row.inventory_kind}:${row.item_type}`}>{fields.map(field => <td key={field}>{row[field]}</td>)}</tr>)}</tbody></table></div>{!summary.length && <p className="empty">No inventory matches these filters.</p>}</section>
+  return <section className="card inventory-feature table-page"><div className="cardhead"><div><h2>Inventory summary</h2><p>Current active inventory. Damaged and maintenance counts may overlap.</p></div><button className="primary" onClick={() => downloadCsv('inventoscan-inventory.csv',headers,summary.map(row => fields.map(field => row[field])))}>Export summary CSV</button></div><div className="inventory-filters"><label>Search<input value={query} onChange={event => setQuery(event.target.value)} placeholder="Shelf or item type"/></label><label className="inventory-checkbox"><input type="checkbox" checked={onlyLow} onChange={event => setOnlyLow(event.target.checked)}/>Low stock only</label></div><TableScroll className="inventory-table" label="Inventory summary"><table><thead><tr>{headers.map(header => <th key={header}>{header}</th>)}</tr></thead><tbody>{summary.map(row => <tr key={`${row.code}:${row.inventory_kind}:${row.item_type}`}>{fields.map(field => <td key={field}>{row[field]}</td>)}</tr>)}</tbody></table></TableScroll>{!summary.length && <p className="empty">No inventory matches these filters.</p>}</section>
 }

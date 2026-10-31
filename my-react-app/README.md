@@ -40,10 +40,11 @@ For a fresh database, run these scripts in Supabase SQL Editor in this order:
 18. `supabase/account_deletion.sql`
 19. `supabase/system_admin_laboratory_access.sql`
 20. `supabase/inventory_check_quantities.sql`
+21. `supabase/atomic_registration.sql`
 
 `schema.sql` is for a fresh database only. For an existing installation, apply missing migrations in the same order. Keep the migration files: later migrations extend earlier functions, and the upgrade tests exercise that sequence. Run account setup before the membership migration so current account permissions are applied last.
 
-Create your first sign-in user in Supabase Auth and add their matching email to `user_accounts` with role `Admin` and status `active`. Active System Admins can access every laboratory without assignments. System Admins assign Laboratory Admins and Operators under **Users**; laboratory members must be assigned before they can access inventory. For existing databases, run `account_deletion.sql` and then `system_admin_laboratory_access.sql` after `security_hardening.sql` to enable the latest account management and laboratory permissions. The access upgrade changes permission functions without adding memberships or changing inventory/history.
+Add your first administrator's email to `user_accounts` with role `Admin` and status `active`, then create their matching sign-in user in Supabase Auth. Creating the profile first avoids a redundant pending registration request. Active System Admins can access every laboratory without assignments. System Admins assign Laboratory Admins and Operators under **Users**; laboratory members must be assigned before they can access inventory. For existing databases, run `account_deletion.sql` and then `system_admin_laboratory_access.sql` after `security_hardening.sql` to enable the latest account management and laboratory permissions. The access upgrade changes permission functions without adding memberships or changing inventory/history.
 
 Optional sample inventory: run `supabase/seed.sql` immediately after `schema.sql`, before the feature migrations. Optional demo logins: run `supabase/demo_accounts.sql` after account setup.
 
@@ -52,6 +53,14 @@ Optional sample inventory: run `supabase/seed.sql` immediately after `schema.sql
 `supabase/cleanup_legacy_tables.sql` removes empty legacy `admin_accounts`, `operator_accounts`, and `activity_logs` tables. It keeps populated tables or tables with dependent objects and reports why they were retained. Review and migrate/export those records before removing them. It does not remove current accounts, inventory, loans, checks, or movement history.
 
 Local file edits do not apply SQL to your live database.
+
+### Registration upgrade
+
+Apply `supabase/atomic_registration.sql` before deploying the updated registration form. It creates each pending approval request in the same transaction as its Auth user, so a failed request write rolls back account creation. The form checks that this trigger is enabled before signup. Registration metadata supplies only the name; the database always creates an Operator request awaiting approval. Direct browser inserts into `account_approvals` are disabled. This follows [Supabase's Auth trigger pattern](https://supabase.com/docs/guides/auth/managing-user-data#using-triggers).
+
+The migration also restores missing requests for existing email-based Auth accounts without an application profile or approval request. It preserves existing profiles, roles, and reviewed requests. When the old flow did not save a name, the email is used as the request name. An administrator can then approve the restored request; the user keeps their existing password. Email confirmation requirements remain controlled by Supabase Auth.
+
+Unfinished inventory checks ask for confirmation before switching pages, laboratories, shelves, or logging out. Cancel keeps all entered findings and notes. Refreshing or closing the page uses the browser's unsaved-changes warning. In-app navigation is blocked while a check is saving. These warnings do not persist a draft after the user confirms leaving.
 
 ## Current tables
 

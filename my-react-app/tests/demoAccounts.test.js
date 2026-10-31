@@ -27,12 +27,17 @@ test('demo seed creates confirmed identities, hashed passwords, and app roles; r
         role public.user_role, status text
       );
     `)
+    await db.exec(`create role anon; create role authenticated;
+      create table public.account_approvals(id uuid primary key default gen_random_uuid(),full_name text not null,email text unique,
+        requested_role public.user_role default 'Operator',status text default 'pending');`)
+    await db.exec(await readFile(new URL('../supabase/atomic_registration.sql', import.meta.url), 'utf8'))
     const sql = await readFile(new URL('../supabase/demo_accounts.sql', import.meta.url), 'utf8')
     await db.exec(sql)
     const first = (await db.query('select id from auth.users order by email')).rows
     await db.exec(sql)
     assert.deepEqual((await db.query('select id from auth.users order by email')).rows, first)
     assert.equal((await db.query('select * from auth.identities')).rows.length, 2)
+    assert.equal((await db.query('select * from account_approvals')).rows.length, 0)
     const accounts = (await db.query(`select u.email,u.email_confirmed_at,a.full_name,a.role,a.status,
       u.encrypted_password = extensions.crypt(case a.role when 'Admin' then 'InventoAdmin2026!' else 'InventoOperator2026!' end,u.encrypted_password) as valid_password
       from auth.users u join public.user_accounts a on a.email=u.email order by u.email`)).rows

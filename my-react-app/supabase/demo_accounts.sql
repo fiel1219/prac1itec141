@@ -27,6 +27,13 @@ begin
     end if;
     account_id := coalesce(account_id, gen_random_uuid());
 
+    -- These owner-created demo profiles are already approved. Insert them first
+    -- so the registration trigger does not create redundant pending requests.
+    insert into public.user_accounts (full_name, email, role, status)
+      values (account.full_name, account.email, account.app_role::public.user_role, 'active')
+      on conflict (email) do update set full_name = excluded.full_name,
+        role = excluded.role, status = excluded.status;
+
     insert into auth.users (
       instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
       raw_app_meta_data, raw_user_meta_data, created_at, updated_at,
@@ -54,10 +61,6 @@ begin
     ) on conflict (provider_id, provider) do update set
       identity_data = excluded.identity_data, updated_at = now();
 
-    insert into public.user_accounts (full_name, email, role, status)
-      values (account.full_name, account.email, account.app_role::public.user_role, 'active')
-      on conflict (email) do update set full_name = excluded.full_name,
-        role = excluded.role, status = excluded.status;
   end loop;
 end $demo$;
 commit;

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { fetchUsers, supabase } from './lib/supabase'
 import { filterUsers, laboratoryRoles, loadUserLaboratories } from './lib/userLaboratories'
 import './Users.css'
+import TableScroll from './TableScroll'
 
 export default function Users({ laboratories, laboratorySetupRequired, onAccountChange, currentUser }) {
   const [users, setUsers] = useState([]), [assignments, setAssignments] = useState([])
@@ -83,7 +84,7 @@ export default function Users({ laboratories, laboratorySetupRequired, onAccount
     } catch (failure) { setSaveError(failure.code === 'PGRST202' ? 'User assignments need a system update. Please contact an administrator.' : failure.message) }
     finally { setBusy(false) }
   }
-  return <section className="card page users-page">
+  return <section className="card page users-page table-page">
     <div className="cardhead"><div><h2>Users</h2><p>Manage accounts and assign laboratory roles.</p></div><span className="badge">{visible.length} users</span></div>
     {(setupRequired || laboratorySetupRequired) && <p role="status" className="connection-error">Laboratory assignments need a system update. Existing accounts are available to view.</p>}
     {error && <div role="alert" className="connection-error">{error} <button type="button" className="secondary" onClick={() => { setLoading(true); setError(''); setReload(value => value + 1) }}>Retry</button></div>}
@@ -94,10 +95,10 @@ export default function Users({ laboratories, laboratorySetupRequired, onAccount
       <label>Laboratory<select aria-label="Laboratory filter" value={laboratory} onChange={event => setLaboratory(event.target.value)}><option value="">All laboratories</option>{laboratories.map(lab => <option key={lab.id} value={lab.id}>{lab.name}</option>)}</select></label>
     </div>
     {loading ? <p role="status">Loading users…</p> : !error && <>
-      {!visible.length ? <div className="empty">No users match these filters.</div> : <table><thead><tr><th>NAME</th><th>EMAIL</th><th>SYSTEM ROLE</th><th>LABORATORY / ROLE</th><th>STATUS</th><th>ACTION</th></tr></thead><tbody>{visible.map(user => {
+      {!visible.length ? <div className="empty">No users match these filters.</div> : <TableScroll label="User accounts"><table><thead><tr><th>NAME</th><th>EMAIL</th><th>SYSTEM ROLE</th><th>LABORATORY / ROLE</th><th>STATUS</th><th>ACTION</th></tr></thead><tbody>{visible.map(user => {
         const memberships = assignments.filter(row => row.user_id === user.id)
         return <tr key={user.id}><td><b>{user.full_name}</b></td><td>{user.email}</td><td>{user.role === 'Admin' ? <span className="badge">System Admin</span> : '—'}</td><td><div className="user-memberships">{user.role === 'Admin' ? <span>All laboratories</span> : memberships.length ? memberships.map(row => <div key={row.laboratory_id}><b>{name(row.laboratory_id)}</b><span>{row.role}</span></div>) : <span>Unassigned</span>}</div></td><td>{user.status}</td><td><div className="user-row-actions"><button type="button" className="secondary" disabled={busy || setupRequired || laboratorySetupRequired} onClick={() => open(user)} aria-label={`Manage assignments for ${user.full_name}`}>Manage roles</button><button type="button" className="user-delete-button" disabled={busy || !!deletionBlocked(user)} title={deletionBlocked(user) || undefined} aria-label={`Delete account for ${user.full_name}`} onClick={() => { setDeleting(user); setConfirmationEmail(''); setDeleteError(''); setSuccess('') }}>Delete account</button></div></td></tr>
-      })}</tbody></table>}
+      })}</tbody></table></TableScroll>}
     </>}
     {editing && <div className="modal-backdrop"><form id="user-assignment-dialog" className="user-assignment-dialog" role="dialog" aria-modal="true" aria-labelledby="user-assignment-title" onSubmit={save}>
       <h2 id="user-assignment-title">Manage roles</h2><p>{editing.full_name} · {editing.email}</p>
