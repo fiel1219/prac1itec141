@@ -1,0 +1,60 @@
+.app {
+  color: var(--theme-text, #22263a);
+  color-scheme: light;
+}
+
+.app[data-theme="dark"] {
+  color-scheme: dark;
+  --theme-surface: #191919;
+  --theme-surface-muted: #242424;
+  --theme-surface-accent: #302a48;
+  --theme-text: #f5f5f5;
+  --theme-muted: #c4c4ce;
+  --theme-accent: #b6aaff;
+  --theme-border: #444448;
+  --theme-success-bg: #17372a;
+  --theme-success-text: #91e5b4;
+  --theme-danger-bg: #41242a;
+  --theme-danger-text: #ffb3bd;
+  --theme-warning-bg: #3b301b;
+  --theme-warning-text: #f6ce80;
+}
+
+.theme-toggle {
+  position: absolute;
+  right: 28px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 8px 12px;
+  border: 1px solid var(--theme-border, #e4e6ed);
+  border-radius: 8px;
+  background: var(--theme-surface-muted, #f6f7fb);
+  color: var(--theme-text, #303548);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.theme-toggle:hover { background: var(--theme-surface-accent, #eeedff); }
+.theme-toggle:focus-visible { outline: 2px solid var(--theme-accent, #6554e7); outline-offset: 3px; }
+.theme-toggle svg { flex-shrink: 0; }
+
+/* Form fields and native select menus follow the selected theme. */
+.app :where(input, select, textarea) { color: var(--theme-text, #22263a); }
+.app[data-theme="dark"] :where(input, select, textarea) { background-color: var(--theme-surface-muted); }
+.app[data-theme="dark"] :where(input, textarea)::placeholder { color: #a5a5b0; opacity: 1; }
+.app[data-theme="dark"] .connection-error { background: var(--theme-danger-bg); color: var(--theme-danger-text); }
+.app[data-theme="dark"] .empty { color: var(--theme-muted); }
+
+@media (max-width: 1200px) {
+  .theme-toggle { top: 12px; right: 24px; transform: none; }
+}
+
+@media (max-width: 700px) {
+  .theme-toggle { top: 10px; right: 16px; width: 36px; padding: 8px; }
+  .theme-toggle span { display: none; }
+}

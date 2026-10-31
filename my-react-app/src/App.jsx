@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import './App.css'
+import './Theme.css'
 import { fetchShelves, fetchLaboratories, fetchTransactions, fetchApprovals, isSupabaseConfigured, supabase } from './lib/supabase'
 import { InventoryLabels, InventoryScanner } from './InventoryQR'
 import { AddShelfDialog, ItemManagement, Reports } from './InventoryFeatures'
@@ -31,6 +32,14 @@ const admin = ['Users','Admin Approvals']
 const Badge = ({children,tone=''}) => <span className={'badge '+tone}>{children}</span>
 
 export default function App() {
+  const [theme, setTheme] = useState(() => {
+    try { return localStorage.getItem('inventoscan.theme') === 'dark' ? 'dark' : 'light' }
+    catch { return 'light' }
+  })
+  useEffect(() => {
+    try { localStorage.setItem('inventoscan.theme', theme) }
+    catch { /* Theme switching still works when browser storage is unavailable. */ }
+  }, [theme])
   const [page,setPage] = useState('Dashboard')
   const [mobile,setMobile] = useState(false)
   const [query,setQuery] = useState('')
@@ -120,7 +129,7 @@ export default function App() {
   const go = name => { if (name==='Inventory Checks' && !canInspect) return; setPage(name); setMobile(false) }
   const compactPage = ['Shelves','Returns','Transaction History','Inventory Checks','Reports'].includes(page)
   const hidePageHeader = compactPage || page === 'Items'
-  return <div className="app"><MainBrand>
+  return <div className="app" data-theme={theme}><MainBrand theme={theme} onToggleTheme={() => setTheme(value => value === 'dark' ? 'light' : 'dark')}>
       <LaboratorySelector laboratories={availableLaboratories} selectedId={laboratoryId} loading={loading || accountLoading} onManage={isSystemAdmin ? ()=>setManagingLaboratories(true) : undefined} onSelect={selectLaboratory}/>
       {isSystemAdmin && <nav className="header-admin-nav" aria-label="Administration">{admin.map(name => <button type="button" key={name} className={page === name ? 'active' : ''} aria-current={page === name ? 'page' : undefined} onClick={() => go(name)}><span aria-hidden="true">⚙</span> {name}</button>)}</nav>}
     </MainBrand>
@@ -170,8 +179,15 @@ export default function App() {
     </main></div>
 }
 
-function MainBrand({ children }) {
-  return <div className="main-brand-user"><div className="brand"><b>⌁</b><span><strong>VSU InventoScan</strong><small>Inventory system</small></span></div><div className="header-controls">{children}</div></div>
+function MainBrand({ children, theme, onToggleTheme }) {
+  const dark = theme === 'dark'
+  return <div className="main-brand-user"><div className="brand"><b>⌁</b><span><strong>VSU InventoScan</strong><small>Inventory system</small></span></div><div className="header-controls">{children}</div>
+    <button type="button" className="theme-toggle" onClick={onToggleTheme} aria-label={`Switch to ${dark ? 'light' : 'dark'} mode`} aria-pressed={dark} title={`Switch to ${dark ? 'light' : 'dark'} mode`}>
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        {dark ? <><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5"/></> : <path d="M20.7 13.1A9 9 0 0 1 10.9 3.3 9 9 0 1 0 20.7 13.1Z"/>}
+      </svg><span>{dark ? 'Light mode' : 'Dark mode'}</span>
+    </button>
+  </div>
 }
 
 function DatabaseTable({ page, onChange, migrationRequired, shelves = [], onOpenShelf, laboratoryId }) {
